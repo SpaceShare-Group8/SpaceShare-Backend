@@ -1,0 +1,33 @@
+{
+  "name": "spaceshare-backend",
+  "version": "1.0.0",
+  "description": "The API powering **SpaceShare**, an on-demand workspace marketplace for Nigeria. This service handles authentication, workspace listings, search, booking, payments, the power/internet reliability scoring system, check-in, and support/disputes.",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spaceshare-group8/spaceshare-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/spaceshare-group8/spaceshare-backend/issues"
+  },
+  "homepage": "https://github.com/spaceshare-group8/spaceshare-backend#readme",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
