@@ -16,7 +16,7 @@
 CREATE TABLE IF NOT EXISTS reliability_reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+    booking_id UUID NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
 
     power_stable BOOLEAN NOT NULL,
 

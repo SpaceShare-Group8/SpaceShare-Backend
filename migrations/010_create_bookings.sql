@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS bookings (
         CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed')),
 
     checkin_code VARCHAR(6),
-    CHECK (checkin_code ~ '^[0-9]{6}$')
+    CHECK (checkin_code ~ '^[0-9]{6}$'),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
