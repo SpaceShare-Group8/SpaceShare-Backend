@@ -1,4 +1,4 @@
-import { createWorkspace } from './workspace.service.js';
+import { createWorkspace, getWorkspaceById, listWorkspaces } from './workspace.service.js';
 
 export async function handleCreateWorkspace(req, res) {
     
@@ -42,3 +42,52 @@ export async function handleCreateWorkspace(req, res) {
     });
   }
 }
+
+export async function handleGetWorkspaceById(req, res) {
+    try {
+      const workspace = await getWorkspaceById(req.params.id);
+  
+      if (!workspace) {
+        return res.status(404).json({
+          status: false,
+          message: 'Workspace not found',
+        });
+      }
+  
+      return res.status(200).json({
+        status: true,
+        data: workspace,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        status: false,
+        message: 'Failed to fetch workspace',
+      });
+    }
+  }
+  
+  export async function handleListWorkspaces(req, res) {
+    try {
+      const { page, limit, city, workspace_type } = req.query;
+  
+      const workspaces = await listWorkspaces({
+        page: page ? parseInt(page) : 1,
+        limit: limit ? parseInt(limit) : 10,
+        city,
+        workspace_type,
+      });
+  
+      return res.status(200).json({
+        status: true,
+        data: workspaces,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        status: false,
+        message: 'Failed to fetch workspaces',
+      });
+    }
+  }
+

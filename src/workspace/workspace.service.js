@@ -24,3 +24,43 @@ export async function createWorkspace(data) {
 
   return result.rows[0];
 }
+
+export async function getWorkspaceById(id) {
+    const result = await pool.query(
+      `SELECT * FROM workspaces WHERE id = $1`,
+      [id]
+    );
+  
+    return result.rows[0] || null;
+  }
+  
+  export async function listWorkspaces({ page = 1, limit = 10, city, workspace_type }) {
+    const offset = (page - 1) * limit;
+  
+    const conditions = [];
+    const values = [];
+  
+    if (city) {
+      values.push(city);
+      conditions.push(`city = $${values.length}`);
+    }
+  
+    if (workspace_type) {
+      values.push(workspace_type);
+      conditions.push(`workspace_type = $${values.length}`);
+    }
+  
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  
+    values.push(limit, offset);
+  
+    const result = await pool.query(
+      `SELECT * FROM workspaces
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values
+    );
+  
+    return result.rows;
+  }
