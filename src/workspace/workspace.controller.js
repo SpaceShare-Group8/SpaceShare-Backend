@@ -1,9 +1,11 @@
+import cloudinary from '../common/config/cloudinary.js';
 import {
     createWorkspace,
     getWorkspaceById,
     listWorkspaces,
     updateWorkspace,
     deleteWorkspace,
+    addWorkspacePhoto,
   } from './workspace.service.js';
 
 export async function handleCreateWorkspace(req, res) {
@@ -170,3 +172,43 @@ export async function handleGetWorkspaceById(req, res) {
       });
     }
   }
+
+export async function handleUploadWorkspacePhoto(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        status: false,
+        message: 'No image file provided',
+      });
+    }
+
+    const uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'spaceshare/workspaces' },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    const photo = await addWorkspacePhoto(
+      req.params.id,
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
+
+    return res.status(201).json({
+      status: true,
+      message: 'Photo uploaded successfully',
+      data: photo,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      status: false,
+      message: 'Failed to upload photo',
+    });
+  }
+}
