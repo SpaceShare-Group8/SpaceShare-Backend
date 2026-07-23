@@ -1,4 +1,4 @@
--- Migration: 009_create_support_tickets
+-- Migration: 014_create_support_tickets
 -- Table: SupportTickets
 -- Notes: Stores customer support requests and their status.
 

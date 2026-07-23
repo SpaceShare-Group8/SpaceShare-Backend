@@ -1,4 +1,4 @@
--- Migration: 010_create_disputes
+-- Migration: 015_create_disputes
 -- Table: Disputes
 -- Notes: Stores disputes raised after bookings for admin resolution.
 
