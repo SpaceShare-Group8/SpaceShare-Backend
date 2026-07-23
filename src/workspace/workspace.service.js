@@ -64,3 +64,49 @@ export async function getWorkspaceById(id) {
   
     return result.rows;
   }
+
+  export async function updateWorkspace(id, host_id, updates) {
+    const allowedFields = [
+      'title', 'description', 'workspace_type', 'capacity',
+      'address', 'city', 'state', 'latitude', 'longitude',
+    ];
+  
+    const setClauses = [];
+    const values = [];
+  
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        values.push(updates[field]);
+        setClauses.push(`${field} = $${values.length}`);
+      }
+    }
+  
+    if (setClauses.length === 0) {
+      return { error: 'no_fields' };
+    }
+  
+    values.push(id, host_id);
+  
+    const result = await pool.query(
+      `UPDATE workspaces
+       SET ${setClauses.join(', ')}, updated_at = NOW()
+       WHERE id = $${values.length - 1} AND host_id = $${values.length}
+       RETURNING *`,
+      values
+    );
+  
+    if (result.rows.length === 0) {
+      return { error: 'not_found_or_forbidden' };
+    }
+  
+    return { data: result.rows[0] };
+  }
+  
+  export async function deleteWorkspace(id, host_id) {
+    const result = await pool.query(
+      `DELETE FROM workspaces WHERE id = $1 AND host_id = $2 RETURNING id`,
+      [id, host_id]
+    );
+  
+    return result.rows.length > 0;
+  }
