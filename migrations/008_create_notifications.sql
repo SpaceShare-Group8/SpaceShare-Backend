@@ -4,9 +4,11 @@
 
 CREATE TABLE IF NOT EXISTS notifications (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
     user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
 
     title           VARCHAR(150) NOT NULL,
+
     message         TEXT NOT NULL,
 
     type            VARCHAR(30) NOT NULL
@@ -18,7 +20,11 @@ CREATE TABLE IF NOT EXISTS notifications (
                             'system'
                         )),
 
+    payload         JSONB,
+
     is_read         BOOLEAN NOT NULL DEFAULT FALSE,
+
+    read_at         TIMESTAMPTZ,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
