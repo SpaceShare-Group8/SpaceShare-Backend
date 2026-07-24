@@ -18,7 +18,7 @@
 -- );
 
 
-#########################################
+
 
 -- Migration: 010_create_bookings
 -- Table: Bookings
