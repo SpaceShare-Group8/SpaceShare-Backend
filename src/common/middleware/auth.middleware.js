@@ -1,4 +1,5 @@
 import { verifyAccessToken } from "../utils/jwt.js";
+import { findUserById,findHostProfileByUserId } from "../../auth/auth.repository.js";
 
 /**
  * Protect routes.
@@ -24,11 +25,36 @@ export const protect = async (req, res, next) => {
       });
     }
 
+    // Verify JWT
     const decoded = verifyAccessToken(token);
 
+    // Fetch user from database
+    const user = await findUserById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // Fetch host profile if the user is a host
+    let hostProfile = null;
+
+    if (user.role === "host") {
+      hostProfile = await findHostProfileByUserId(user.id);
+    }
+
+    // Attach authenticated user to request
     req.user = {
-      id: decoded.id,
-      role: decoded.role,
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      is_verified: user.is_verified,
+      verification_status:
+        hostProfile?.verification_status ?? null,
     };
 
     next();
@@ -61,6 +87,17 @@ export const authorize = (...roles) => {
       return res.status(403).json({
         success: false,
         message: "Forbidden. You do not have permission to perform this action.",
+      });
+    }
+
+    // Only verified hosts can perform host actions
+    if (
+      req.user.role === "host" &&
+      req.user.verification_status !== "verified"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Your host account is not yet verified.",
       });
     }
 

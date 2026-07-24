@@ -5,7 +5,6 @@ import { body, validationResult } from "express-validator";
  */
 export const validate = (req, res, next) => {
   const errors = validationResult(req);
-
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
@@ -13,7 +12,6 @@ export const validate = (req, res, next) => {
       errors: errors.array(),
     });
   }
-
   next();
 };
 
@@ -29,7 +27,8 @@ export const registerValidation = [
     .withMessage("Full name must be between 3 and 150 characters."),
 
   body("email")
-    .optional()
+    .notEmpty()
+    .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address."),
 
@@ -49,16 +48,6 @@ export const registerValidation = [
     .isIn(["seeker", "host"])
     .withMessage("Role must be either seeker or host."),
 
-  body().custom((value) => {
-    if (!value.email && !value.phone) {
-      throw new Error(
-        "Either email or phone number is required."
-      );
-    }
-
-    return true;
-  }),
-
   validate,
 ];
 
@@ -67,29 +56,14 @@ export const registerValidation = [
  */
 export const loginValidation = [
   body("email")
-    .optional()
+    .notEmpty()
+    .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address."),
-
-  body("phone")
-    .optional()
-    .isMobilePhone("any")
-    .withMessage("Please provide a valid phone number."),
 
   body("password")
     .notEmpty()
     .withMessage("Password is required."),
-
-  body().custom((value) => {
-    if (!value.email && !value.phone) {
-      throw new Error(
-        "Either email or phone number is required."
-      );
-
-    }
-
-    return true;
-  }),
 
   validate,
 ];

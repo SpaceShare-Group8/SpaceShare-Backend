@@ -1,72 +1,34 @@
-import {
-  findUserByEmail,
-  findUserByPhone,
-  findUserById,
-  createUser,
-} from "./auth.repository.js";
-
-import {
-  hashPassword,
-  comparePassword,
-} from "../common/utils/password.js";
-
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  verifyRefreshToken,
-} from "../common/utils/jwt.js";
+import { findUserByEmail, findUserByPhone, findUserById, createUser, createHostProfile,} from "./auth.repository.js";
+import { hashPassword, comparePassword } from "../common/utils/password.js";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken,} from "../common/utils/jwt.js";
 
 /**
  * Register a new user
  */
 export const register = async (userData) => {
-  const {
-    full_name,
-    email,
-    phone,
-    password,
-    role = "seeker",
-  } = userData;
+  const { full_name, email, phone, password, role = "seeker" } = userData;
 
-  // Ensure either email or phone is provided
-  if (!email && !phone) {
-    throw new Error("Email or phone number is required.");
+  // Email is required — DB constraint: users.email is NOT NULL UNIQUE
+  const existingEmail = await findUserByEmail(email);
+  if (existingEmail) {
+    throw new Error("Email already exists.");
   }
 
-  // Check email uniqueness
-  if (email) {
-    const existingEmail = await findUserByEmail(email);
-
-    if (existingEmail) {
-      throw new Error("Email already exists.");
-    }
-  }
-
-  // Check phone uniqueness
+  // Phone is optional — only check uniqueness if provided
   if (phone) {
     const existingPhone = await findUserByPhone(phone);
-
     if (existingPhone) {
       throw new Error("Phone number already exists.");
     }
   }
 
-  // Validate role
-  const allowedRoles = [
-    "seeker",
-    "host",
-    "corporate_admin",
-    "admin",
-  ];
-
+  const allowedRoles = ["seeker", "host", "corporate_admin", "admin"];
   if (!allowedRoles.includes(role)) {
     throw new Error("Invalid user role.");
   }
 
-  // Hash password
   const password_hash = await hashPassword(password);
 
-  // Create user
   const user = await createUser({
     full_name,
     email,
@@ -74,6 +36,10 @@ export const register = async (userData) => {
     password_hash,
     role,
   });
+
+  if (role === "host") {
+  await createHostProfile(user.id);
+}
 
   return {
     message: "User registered successfully.",
@@ -84,34 +50,19 @@ export const register = async (userData) => {
 /**
  * Login user
  */
-export const login = async ({ email, phone, password }) => {
-  if (!email && !phone) {
-    throw new Error("Email or phone number is required.");
-  }
-
-  let user;
-
-  if (email) {
-    user = await findUserByEmail(email);
-  } else {
-    user = await findUserByPhone(phone);
-  }
+export const login = async ({ email, password }) => {
+  const user = await findUserByEmail(email);
 
   if (!user) {
     throw new Error("Invalid credentials.");
   }
 
-  const isPasswordValid = await comparePassword(
-    password,
-    user.password_hash
-  );
-
+  const isPasswordValid = await comparePassword(password, user.password_hash);
   if (!isPasswordValid) {
     throw new Error("Invalid credentials.");
   }
 
   const accessToken = generateAccessToken(user);
-
   const refreshToken = generateRefreshToken(user);
 
   return {
@@ -138,7 +89,6 @@ export const refresh = async (refreshToken) => {
   }
 
   const decoded = verifyRefreshToken(refreshToken);
-
   const user = await findUserById(decoded.id);
 
   if (!user) {
@@ -146,7 +96,6 @@ export const refresh = async (refreshToken) => {
   }
 
   const accessToken = generateAccessToken(user);
-
   const newRefreshToken = generateRefreshToken(user);
 
   return {

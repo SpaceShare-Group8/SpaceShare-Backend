@@ -47,9 +47,17 @@ export const verifyAccessToken = (token) => {
   return jwt.verify(token, ACCESS_TOKEN_SECRET);
 };
 
-/**
- * Verify Refresh Token
- */
+// Verify Refresh Token
+ 
 export const verifyRefreshToken = (token) => {
   return jwt.verify(token, REFRESH_TOKEN_SECRET);
 };
+
+// //Generate Password Reset Token
+// export const generatePasswordResetToken = (user) => {
+//   return jwt.sign({ id:user.id,}, 
+//     process.env.JWT_PASSWORD_RESET_SECRET,
+//     {expiresIn: process.env.JWT_PASSWORD_RESET_EXPIRES_IN || "15m",}
+//   );
+// };
+

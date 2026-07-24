@@ -189,3 +189,40 @@ export const updatePassword = async (
 
   return rows[0] || null;
 };
+
+/**
+ * Get a host profile by user ID.
+ *
+ * @param {string} userId
+ * @returns {Promise<Object|null>}
+ */
+export const findHostProfileByUserId = async (userId) => {
+  const query = `
+    SELECT *
+    FROM host_profiles
+    WHERE user_id = $1
+    LIMIT 1;
+  `;
+
+  const { rows } = await pool.query(query, [userId]);
+
+  return rows[0] || null;
+};
+
+/**
+ * Create a host profile.
+ *
+ * @param {string} userId
+ * @returns {Promise<Object>}
+ */
+export const createHostProfile = async (userId) => {
+  const query = `
+    INSERT INTO host_profiles (user_id)
+    VALUES ($1)
+    RETURNING *;
+  `;
+
+  const { rows } = await pool.query(query, [userId]);
+
+  return rows[0];
+};

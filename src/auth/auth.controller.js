@@ -7,7 +7,6 @@ import * as authService from "./auth.service.js";
 export const register = async (req, res) => {
   try {
     const result = await authService.register(req.body);
-
     return res.status(201).json({
       success: true,
       message: result.message,
@@ -28,7 +27,6 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const result = await authService.login(req.body);
-
     return res.status(200).json({
       success: true,
       message: result.message,
@@ -37,9 +35,16 @@ export const login = async (req, res) => {
       data: result.user,
     });
   } catch (error) {
-    return res.status(401).json({
+    if (
+      error.message === "Invalid credentials." ||
+      error.message === "Email is required."
+    ) {
+      return res.status(401).json({ success: false, message: error.message });
+    }
+    console.error("Login error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Something went wrong. Please try again.",
     });
   }
 };
@@ -51,9 +56,7 @@ export const login = async (req, res) => {
 export const refresh = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-
     const result = await authService.refresh(refreshToken);
-
     return res.status(200).json({
       success: true,
       message: "Access token refreshed successfully.",
@@ -61,9 +64,21 @@ export const refresh = async (req, res) => {
       refreshToken: result.refreshToken,
     });
   } catch (error) {
-    return res.status(401).json({
+    if (
+      error.message === "Refresh token is required." ||
+      error.message === "User not found." ||
+      error.name === "JsonWebTokenError" ||
+      error.name === "TokenExpiredError"
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token.",
+      });
+    }
+    console.error("Refresh error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Something went wrong. Please try again.",
     });
   }
 };
