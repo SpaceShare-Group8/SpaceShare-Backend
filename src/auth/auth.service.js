@@ -1,5 +1,5 @@
 import * as authRepository from "./auth.repository.js";
-import { hashPassword, comparePassword } from "../common/utils/hash.js";
+import { hashPassword, comparePassword } from "../common/utils/password.js";
 import {
   generateAccessToken,
   generateRefreshToken,
