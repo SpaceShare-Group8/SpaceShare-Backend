@@ -19,6 +19,13 @@ export const validate = (req, res, next) => {
  * Register Validation
  */
 export const registerValidation = [
+  body().custom((value, { req }) => {
+    if (!req.body.email && !req.body.phone) {
+      throw new Error("Either email or phone number is required.");
+    }
+    return true;
+  }),
+  
   body("full_name")
     .trim()
     .notEmpty()
@@ -27,8 +34,7 @@ export const registerValidation = [
     .withMessage("Full name must be between 3 and 150 characters."),
 
   body("email")
-    .notEmpty()
-    .withMessage("Email is required.")
+    .optional()
     .isEmail()
     .withMessage("Please provide a valid email address."),
 
@@ -45,8 +51,8 @@ export const registerValidation = [
 
   body("role")
     .optional()
-    .isIn(["seeker", "host"])
-    .withMessage("Role must be either seeker or host."),
+    .isIn(["seeker", "host", "corporate_admin", "admin"])
+    .withMessage("Role must be either seeker, host, corporate_admin, or admin."),
 
   validate,
 ];
@@ -55,11 +61,23 @@ export const registerValidation = [
  * Login Validation
  */
 export const loginValidation = [
+  body().custom((value, { req }) => {
+    if (!req.body.email && !req.body.phone) {
+      throw new Error("Either email or phone number is required.");
+    }
+    return true;
+  }),
+  
   body("email")
     .notEmpty()
     .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address."),
+
+  body("phone")
+    .optional()
+    .isMobilePhone("any")
+    .withMessage("Please provide a valid phone number."),
 
   body("password")
     .notEmpty()

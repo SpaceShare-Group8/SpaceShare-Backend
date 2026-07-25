@@ -37,10 +37,10 @@ export const login = async (req, res) => {
   } catch (error) {
     if (
       error.message === "Invalid credentials." ||
-      error.message === "Email is required."
-    ) {
-      return res.status(401).json({ success: false, message: error.message });
-    }
+      error.message === "Email is required." ||
+      error.message === "Phone number is required." ||
+      error.message === "Either email or phone number is required."
+    )
     console.error("Login error:", error);
     return res.status(500).json({
       success: false,

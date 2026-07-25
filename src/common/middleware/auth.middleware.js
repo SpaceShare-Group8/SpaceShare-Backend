@@ -89,18 +89,34 @@ export const authorize = (...roles) => {
         message: "Forbidden. You do not have permission to perform this action.",
       });
     }
-
-    // Only verified hosts can perform host actions
-    if (
-      req.user.role === "host" &&
-      req.user.verification_status !== "verified"
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Your host account is not yet verified.",
-      });
-    }
-
+    
     next();
   };
+};
+
+// Require a verified host account
+
+export const requireVerifiedHost = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized.",
+    });
+  }
+
+  if (req.user.role !== "host") {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden. Only hosts can access this resource.",
+    });
+  }
+
+  if (req.user.verification_status !== "verified") {
+    return res.status(403).json({
+      success: false,
+      message: "Your host account is not yet verified.",
+    });
+  }
+
+  next();
 };
