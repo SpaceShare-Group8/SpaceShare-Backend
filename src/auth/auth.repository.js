@@ -59,6 +59,7 @@ export const findUserById = async (id) => {
 
 /**
  * Create a new user.
+ * Supports multi-role arrays per SpaceShare PRD Section 9 & 14.
  *
  * @param {Object} user
  * @returns {Promise<Object>}
@@ -68,15 +69,19 @@ export const createUser = async ({
   email,
   phone,
   password_hash,
-  role,
+  role = "seeker",
+  roles,
 }) => {
+  // Normalize roles: prioritize roles array, fallback to single role string
+  const userRoles = roles || (Array.isArray(role) ? role : [role]);
+
   const query = `
     INSERT INTO users (
       full_name,
       email,
       phone,
       password_hash,
-      role
+      roles
     )
     VALUES ($1, $2, $3, $4, $5)
     RETURNING
@@ -84,7 +89,7 @@ export const createUser = async ({
       full_name,
       email,
       phone,
-      role,
+      roles,
       is_verified,
       created_at,
       updated_at;
@@ -95,7 +100,7 @@ export const createUser = async ({
     email || null,
     phone || null,
     password_hash,
-    role,
+    userRoles,
   ];
 
   const { rows } = await pool.query(query, values);
@@ -182,10 +187,7 @@ export const updatePassword = async (
     RETURNING *;
   `;
 
-  const { rows } = await pool.query(query, [
-    password_hash,
-    id,
-  ]);
+  const { rows } = await pool.query(query, [password_hash, id]);
 
   return rows[0] || null;
 };
