@@ -34,19 +34,26 @@ export const login = async (req, res) => {
       refreshToken: result.refreshToken,
       data: result.user,
     });
-  } catch (error) {
-    if (
-      error.message === "Invalid credentials." ||
-      error.message === "Email is required." ||
-      error.message === "Phone number is required." ||
-      error.message === "Either email or phone number is required."
-    )
-    console.error("Login error:", error);
-    return res.status(500).json({
+} catch (error) {
+  if (
+    error.message === "Invalid credentials." ||
+    error.message === "Email is required." ||
+    error.message === "Phone number is required." ||
+    error.message === "Either email or phone number is required."
+  ) {
+    return res.status(401).json({
       success: false,
-      message: "Something went wrong. Please try again.",
+      message: error.message,
     });
   }
+
+  console.error("Login error:", error);
+
+  return res.status(500).json({
+    success: false,
+    message: "Something went wrong. Please try again.",
+  });
+}
 };
 
 /**
