@@ -1,93 +1,104 @@
-import { body, validationResult } from "express-validator";
+import { body } from "express-validator";
 
 /**
- * Handle validation errors middleware
- */
-export const validate = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation failed.",
-      errors: errors.array(),
-    });
-  }
-  next();
-};
-
-/**
- * Register Validation Rules
- * PRD Section 11.1: Email is login identifier; Phone is a required profile field at signup.
+ * Validation rules for user registration
+ * POST /api/auth/register
+ * PRD Section 11.1 & 16.1
  */
 export const registerValidation = [
   body("full_name")
     .trim()
     .notEmpty()
     .withMessage("Full name is required.")
-    .isLength({ min: 3, max: 150 })
-    .withMessage("Full name must be between 3 and 150 characters."),
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Full name must be between 2 and 100 characters."),
 
   body("email")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Email is required.")
     .isEmail()
-    .withMessage("Please provide a valid email address."),
+    .withMessage("Please provide a valid email address.")
+    .normalizeEmail(),
 
   body("phone")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Phone number is required as a profile field.")
-    .isMobilePhone("any")
-    .withMessage("Please provide a valid phone number."),
+    .matches(/^\+?[1-9]\d{1,14}$/)
+    .withMessage("Please provide a valid phone number in E.164 format."),
 
   body("password")
     .notEmpty()
     .withMessage("Password is required.")
     .isLength({ min: 8 })
-    .withMessage("Password must be at least 8 characters long."),
+    .withMessage("Password must be at least 8 characters long.")
+    .matches(/\d/)
+    .withMessage("Password must contain at least one number.")
+    .matches(/[a-zA-Z]/)
+    .withMessage("Password must contain at least one letter."),
 
   body("role")
     .optional()
-    .custom((role) => {
-      const validRoles = ["seeker", "host", "corporate_admin"];
-      if (Array.isArray(role)) {
-        return role.every((r) => validRoles.includes(r));
-      }
-      return validRoles.includes(role);
-    })
-    .withMessage("Role must be seeker, host, corporate_admin, or a combination."),
+    .isIn(["seeker", "host", "admin"])
+    .withMessage("Invalid role specified. Must be 'seeker', 'host', or 'admin'."),
 
-  validate,
+  body("roles")
+    .optional()
+    .isArray()
+    .withMessage("Roles must be an array of valid role strings.")
+    .custom((roles) => {
+      const validRoles = ["seeker", "host", "admin"];
+      const isValid = roles.every((r) => validRoles.includes(r));
+      if (!isValid) {
+        throw new Error("Roles contains invalid entries. Allowed: seeker, host, admin.");
+      }
+      return true;
+    }),
+
+  // Custom validator to ensure either email OR phone is provided
+  body().custom((value, { req }) => {
+    if (!req.body.email && !req.body.phone) {
+      throw new Error("Either email or phone number must be provided.");
+    }
+    return true;
+  }),
 ];
 
 /**
- * Login Validation Rules
- * PRD Section 11.1: Email (login identifier) + Password only.
+ * Validation rules for user login
+ * POST /api/auth/login
+ * PRD Section 11.1
  */
 export const loginValidation = [
   body("email")
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty()
-    .withMessage("Email is required.")
     .isEmail()
-    .withMessage("Please provide a valid email address."),
+    .withMessage("Please provide a valid email address.")
+    .normalizeEmail(),
+
+  body("phone")
+    .optional({ checkFalsy: true })
+    .trim(),
 
   body("password")
     .notEmpty()
     .withMessage("Password is required."),
 
-  validate,
+  // Custom validator to ensure either email OR phone is supplied
+  body().custom((value, { req }) => {
+    if (!req.body.email && !req.body.phone) {
+      throw new Error("Either email or phone number is required to log in.");
+    }
+    return true;
+  }),
 ];
 
 /**
- * Refresh Token Validation Rules
- * PRD Section 11.1 & 16.1
+ * Validation rules for token refresh
+ * POST /api/auth/refresh
  */
 export const refreshValidation = [
   body("refreshToken")
     .notEmpty()
     .withMessage("Refresh token is required."),
-
-  validate,
 ];
