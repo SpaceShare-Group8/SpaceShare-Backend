@@ -69,10 +69,9 @@ export const loginValidation = [
   }),
   
   body("email")
-    .notEmpty()
-    .withMessage("Email is required.")
-    .isEmail()
-    .withMessage("Please provide a valid email address."),
+  .optional()
+  .isEmail()
+  .withMessage("Please provide a valid email address."),
 
   body("phone")
     .optional()
