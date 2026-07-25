@@ -33,7 +33,7 @@ export const register = async (userData) => {
     }
   }
 
-  // 3. Format roles (support single role string or array for dual Seeker/Host accounts)
+  // 3. Format roles (supports single role string or array for dual Seeker/Host accounts)
   const rolesArray = Array.isArray(role) ? role : [role];
 
   // 4. Hash password
