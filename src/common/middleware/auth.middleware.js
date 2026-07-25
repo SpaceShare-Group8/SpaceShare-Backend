@@ -63,7 +63,7 @@ export const protect = async (req, res, next) => {
 
     next();
   } catch (error) {
-    // Catch real internal database or unexpected server errors
+    // Catch unexpected database or server errors
     return res.status(500).json({
       success: false,
       message: "Internal server error during authentication.",
