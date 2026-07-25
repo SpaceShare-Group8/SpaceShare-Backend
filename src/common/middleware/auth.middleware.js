@@ -1,120 +1,126 @@
 import { verifyAccessToken } from "../utils/jwt.js";
-import { findUserById,findHostProfileByUserId } from "../../auth/auth.repository.js";
+import { findUserById, findHostProfileByUserId } from "../../auth/auth.repository.js";
 
 /**
- * Protect routes.
- * Verifies the JWT Access Token and attaches the authenticated user
- * to the request object.
+ * Protect routes - verifies JWT and attaches current user context
+ * PRD Section 11.1 & 11.2
  */
 export const protect = async (req, res, next) => {
   try {
-    let token;
-
-    // Check Authorization header
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer ")
-    ) {
-      token = req.headers.authorization.split(" ")[1];
-    }
-
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. No token provided.",
+        message: "Unauthorized. Token missing.",
       });
     }
 
-    // Verify JWT
-    const decoded = verifyAccessToken(token);
+    const token = authHeader.split(" ")[1];
 
-    // Fetch user from database
+    // 1. Verify JWT Token
+    let decoded;
+    try {
+      decoded = verifyAccessToken(token);
+    } catch (jwtError) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired token.",
+      });
+    }
+
+    // 2. Retrieve user from database
     const user = await findUserById(decoded.id);
-
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "User not found.",
+        message: "User account no longer exists.",
       });
     }
 
-    // Fetch host profile if the user is a host
-    let hostProfile = null;
+    // 3. Normalize roles into a guaranteed Array (Supports single string or array)
+    const normalizedRoles = Array.isArray(user.roles)
+      ? user.roles
+      : user.role
+      ? [user.role]
+      : ["seeker"];
 
-    if (user.role === "host") {
-      hostProfile = await findHostProfileByUserId(user.id);
+    // 4. Fetch Host verification status if user holds 'host' role
+    let hostVerificationStatus = null;
+    if (normalizedRoles.includes("host")) {
+      const hostProfile = await findHostProfileByUserId(user.id);
+      hostVerificationStatus = hostProfile?.verification_status ?? "pending";
     }
 
-    // Attach authenticated user to request
+    // 5. Attach structured user payload to request object
     req.user = {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
-      role: user.role,
-      is_verified: user.is_verified,
-      verification_status:
-        hostProfile?.verification_status ?? null,
+      roles: normalizedRoles,
+      verification_status: hostVerificationStatus,
     };
 
     next();
   } catch (error) {
-    return res.status(401).json({
+    // Catch real internal database or unexpected server errors
+    return res.status(500).json({
       success: false,
-      message: "Invalid or expired access token.",
+      message: "Internal server error during authentication.",
+      error: error.message,
     });
   }
 };
 
 /**
- * Role-Based Access Control (RBAC)
- *
- * Usage:
- * authorize("host")
- * authorize("admin")
- * authorize("host", "admin")
+ * Authorize roles
+ * PRD Section 9: Supports single or multi-role checking
  */
-export const authorize = (...roles) => {
+export const authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized.",
+      return res.status(401).json({ 
+        success: false, 
+        message: "Unauthorized. Please log in first." 
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    const userRoles = req.user.roles || [];
+    const hasPermission = allowedRoles.some((role) => userRoles.includes(role));
+
+    if (!hasPermission) {
       return res.status(403).json({
         success: false,
-        message: "Forbidden. You do not have permission to perform this action.",
+        message: "Forbidden. Insufficient role permissions.",
       });
     }
-    
+
     next();
   };
 };
 
-// Require a verified host account
-
+/**
+ * Require a verified host account
+ * PRD Section 10.2, 11.5 & Section 14 Schema
+ */
 export const requireVerifiedHost = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
+  if (!req.user || !req.user.roles.includes("host")) {
+    return res.status(403).json({
       success: false,
-      message: "Unauthorized.",
+      message: "Forbidden. Requires host role.",
     });
   }
 
-  if (req.user.role !== "host") {
-    return res.status(403).json({
-      success: false,
-      message: "Forbidden. Only hosts can access this resource.",
-    });
-  }
+  // PRD Statuses: 'approved' or 'verified'
+  const isApproved = 
+    req.user.verification_status === "approved" || 
+    req.user.verification_status === "verified";
 
-  if (req.user.verification_status !== "verified") {
+  if (!isApproved) {
     return res.status(403).json({
       success: false,
-      message: "Your host account is not yet verified.",
+      message: "Host account is pending verification by Platform Admin.",
+      verification_status: req.user.verification_status,
     });
   }
 
