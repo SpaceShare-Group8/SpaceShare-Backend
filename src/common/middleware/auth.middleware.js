@@ -2,7 +2,8 @@ import { verifyAccessToken } from "../utils/jwt.js";
 import { findUserById, findHostProfileByUserId } from "../../auth/auth.repository.js";
 
 /**
- * Protect routes - verifies JWT and attaches current user context
+ * Protect routes - verifies JWT and attaches current user context.
+ * Performs a single database lookup for active account validation.
  * PRD Section 11.1 & 11.2
  */
 export const protect = async (req, res, next) => {
@@ -17,7 +18,7 @@ export const protect = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    // 1. Verify JWT Token
+    // 1. Verify JWT Token signature and expiration
     let decoded;
     try {
       decoded = verifyAccessToken(token);
@@ -28,7 +29,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // 2. Retrieve user from database
+    // 2. Retrieve user from database to ensure account still exists
     const user = await findUserById(decoded.id);
     if (!user) {
       return res.status(401).json({
@@ -37,37 +38,28 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // 3. Normalize roles into a guaranteed Array (Supports single string or array)
+    // 3. Normalize roles into a guaranteed Array
     const normalizedRoles = Array.isArray(user.roles)
       ? user.roles
       : user.role
       ? [user.role]
       : ["seeker"];
 
-    // 4. Fetch Host verification status if user holds 'host' role
-    let hostVerificationStatus = null;
-    if (normalizedRoles.includes("host")) {
-      const hostProfile = await findHostProfileByUserId(user.id);
-      hostVerificationStatus = hostProfile?.verification_status ?? "pending";
-    }
-
-    // 5. Attach structured user payload to request object
+    // 4. Attach structured user payload to request object
     req.user = {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
       roles: normalizedRoles,
-      verification_status: hostVerificationStatus,
     };
 
-    next();
+    return next();
   } catch (error) {
-    // Catch unexpected database or server errors
+    console.error("Authentication error in protect middleware:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error during authentication.",
-      error: error.message,
     });
   }
 };
@@ -95,34 +87,47 @@ export const authorize = (...allowedRoles) => {
       });
     }
 
-    next();
+    return next();
   };
 };
 
 /**
  * Require a verified host account
+ * Fetches host status on-demand only when a route requires host verification.
  * PRD Section 10.2, 11.5 & Section 14 Schema
  */
-export const requireVerifiedHost = (req, res, next) => {
-  if (!req.user || !req.user.roles.includes("host")) {
-    return res.status(403).json({
+export const requireVerifiedHost = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.roles.includes("host")) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden. Requires host role.",
+      });
+    }
+
+    // On-demand database lookup for host profile
+    const hostProfile = await findHostProfileByUserId(req.user.id);
+    const verificationStatus = hostProfile?.verification_status ?? "pending";
+
+    // PRD Statuses: 'approved' or 'verified'
+    const isApproved =
+      verificationStatus === "approved" || verificationStatus === "verified";
+
+    if (!isApproved) {
+      return res.status(403).json({
+        success: false,
+        message: "Host account is pending verification by Platform Admin.",
+        verification_status: verificationStatus,
+      });
+    }
+
+    req.hostProfile = hostProfile;
+    return next();
+  } catch (error) {
+    console.error("Error in requireVerifiedHost middleware:", error);
+    return res.status(500).json({
       success: false,
-      message: "Forbidden. Requires host role.",
+      message: "Server error while verifying host status.",
     });
   }
-
-  // PRD Statuses: 'approved' or 'verified'
-  const isApproved =
-    req.user.verification_status === "approved" ||
-    req.user.verification_status === "verified";
-
-  if (!isApproved) {
-    return res.status(403).json({
-      success: false,
-      message: "Host account is pending verification by Platform Admin.",
-      verification_status: req.user.verification_status,
-    });
-  }
-
-  next();
 };
