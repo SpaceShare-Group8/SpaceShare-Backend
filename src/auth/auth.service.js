@@ -19,6 +19,10 @@ import {
 export const register = async (userData) => {
   const { full_name, email, phone, password, role = "seeker" } = userData;
 
+  if (!email && !phone) {
+    throw new Error("Email or phone number is required.");
+  }
+
   // 1. Check if email already exists (Primary Login Identifier)
   const existingEmail = await findUserByEmail(email);
   if (existingEmail) {
@@ -39,12 +43,13 @@ export const register = async (userData) => {
   // 4. Hash password
   const password_hash = await hashPassword(password);
 
-  // 5. Create user record with required fields
+  // 5. Create user record
   const user = await createUser({
     full_name,
     email,
     phone,
     password_hash,
+    role: rolesArray[0],
     roles: rolesArray,
   });
 
@@ -92,13 +97,16 @@ export const login = async ({ email, password }) => {
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
+      role: user.role,
       roles: user.roles,
+      is_verified: user.is_verified,
     },
   };
 };
 
 /**
  * Refresh Access Token
+ * PRD Section 11.1 & 16.1
  */
 export const refresh = async (refreshToken) => {
   if (!refreshToken) {
