@@ -79,9 +79,9 @@ export const protect = async (req, res, next) => {
 export const authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Unauthorized. Please log in first." 
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized. Please log in first.",
       });
     }
 
@@ -112,8 +112,8 @@ export const requireVerifiedHost = (req, res, next) => {
   }
 
   // PRD Statuses: 'approved' or 'verified'
-  const isApproved = 
-    req.user.verification_status === "approved" || 
+  const isApproved =
+    req.user.verification_status === "approved" ||
     req.user.verification_status === "verified";
 
   if (!isApproved) {
