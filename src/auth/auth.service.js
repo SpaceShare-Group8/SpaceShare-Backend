@@ -1,11 +1,5 @@
-import {
-  findUserByEmail,
-  findUserByPhone,
-  findUserById,
-  createUser,
-  createHostProfile,
-} from "./auth.repository.js";
-import { hashPassword, comparePassword } from "../common/utils/password.js";
+import * as authRepository from "./auth.repository.js";
+import { hashPassword, comparePassword } from "../common/utils/hash.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -14,49 +8,71 @@ import {
 
 /**
  * Register a new user
- * PRD Section 11.1 & Section 14 Schema
+ * Handles email/phone uniqueness check, password hashing, user insertion,
+ * automatic host_profile creation if role includes "host", and JWT generation.
+ * PRD Section 11.1 & 16.1
+ *
+ * @param {Object} userData
+ * @returns {Promise<Object>}
  */
 export const register = async (userData) => {
-  const { full_name, email, phone, password, role = "seeker" } = userData;
+  const { full_name, email, phone, password, role = "seeker", roles } = userData;
 
+  // Validate presence of email or phone
   if (!email && !phone) {
     throw new Error("Email or phone number is required.");
   }
 
-  // 1. Check if email already exists (Primary Login Identifier)
-  const existingEmail = await findUserByEmail(email);
-  if (existingEmail) {
-    throw new Error("Email already registered.");
+  // Normalize roles input (support array or single string)
+  const userRoles = roles || (Array.isArray(role) ? role : [role]);
+
+  // Check if email already exists
+  if (email) {
+    const existingEmail = await authRepository.findUserByEmail(email);
+    if (existingEmail) {
+      throw new Error("Email already registered.");
+    }
   }
 
-  // 2. Check if phone already exists
+  // Check if phone already exists
   if (phone) {
-    const existingPhone = await findUserByPhone(phone);
+    const existingPhone = await authRepository.findUserByPhone(phone);
     if (existingPhone) {
       throw new Error("Phone number already registered.");
     }
   }
 
-  // 3. Format roles (supports single role string or array for dual Seeker/Host accounts)
-  const rolesArray = Array.isArray(role) ? role : [role];
-
-  // 4. Hash password
+  // Hash user password
   const password_hash = await hashPassword(password);
 
-  // 5. Create user record
-  const user = await createUser({
+  // Insert user into database
+  const user = await authRepository.createUser({
     full_name,
     email,
     phone,
     password_hash,
-    role: rolesArray[0],
-    roles: rolesArray,
+    role: userRoles[0],
+    roles: userRoles,
   });
 
-  // 6. If user selected host role, initialize host profile
-  if (rolesArray.includes("host")) {
-    await createHostProfile(user.id);
+  // Automatically initialize host profile if registering as a host
+  if (userRoles.includes("host")) {
+    const existingHostProfile = await authRepository.findHostProfileByUserId(user.id);
+    if (!existingHostProfile) {
+      await authRepository.createHostProfile(user.id);
+    }
   }
+
+  // Generate auth tokens
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    roles: user.roles,
+  };
+
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
 
   return {
     message: "User registered successfully.",
@@ -65,66 +81,114 @@ export const register = async (userData) => {
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
+      role: user.role,
       roles: user.roles,
+      is_verified: user.is_verified,
+      accessToken,
+      refreshToken,
     },
   };
 };
 
 /**
  * Login user
- * PRD Section 11.1: Authenticate via Email and Password
+ * Verifies email/phone credentials, checks password match, and returns tokens.
+ * PRD Section 11.1
+ *
+ * @param {Object} credentials
+ * @returns {Promise<Object>}
  */
-export const login = async ({ email, password }) => {
-  const user = await findUserByEmail(email);
+export const login = async ({ email, phone, password }) => {
+  if (!email && !phone) {
+    throw new Error("Email or phone number is required.");
+  }
+
+  if (!password) {
+    throw new Error("Password is required.");
+  }
+
+  // Fetch user by email or phone
+  const user = await authRepository.findUserByEmailOrPhone({ email, phone });
   if (!user) {
     throw new Error("Invalid email or password.");
   }
 
+  // Verify password hash
   const isPasswordValid = await comparePassword(password, user.password_hash);
   if (!isPasswordValid) {
     throw new Error("Invalid email or password.");
   }
 
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+  // Ensure user has host profile if they hold host role
+  const userRoles = user.roles || [user.role];
+  if (userRoles.includes("host")) {
+    const hostProfile = await authRepository.findHostProfileByUserId(user.id);
+    if (!hostProfile) {
+      await authRepository.createHostProfile(user.id);
+    }
+  }
+
+  // Generate auth tokens
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    roles: userRoles,
+  };
+
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
 
   return {
     message: "Login successful.",
-    accessToken,
-    refreshToken,
     user: {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
       role: user.role,
-      roles: user.roles,
+      roles: userRoles,
       is_verified: user.is_verified,
+      accessToken,
+      refreshToken,
     },
   };
 };
 
 /**
  * Refresh Access Token
+ * Validates refresh token, retrieves user, and issues a fresh token pair.
  * PRD Section 11.1 & 16.1
+ *
+ * @param {string} refreshToken
+ * @returns {Promise<Object>}
  */
 export const refresh = async (refreshToken) => {
   if (!refreshToken) {
     throw new Error("Refresh token is required.");
   }
 
+  // Verify signature and expiration of refresh token
   const decoded = verifyRefreshToken(refreshToken);
-  const user = await findUserById(decoded.id);
 
+  // Retrieve user to make sure account still exists
+  const user = await authRepository.findUserById(decoded.id);
   if (!user) {
     throw new Error("User not found.");
   }
 
-  const accessToken = generateAccessToken(user);
-  const newRefreshToken = generateRefreshToken(user);
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    roles: user.roles || [user.role],
+  };
+
+  const newAccessToken = generateAccessToken(payload);
+  const newRefreshToken = generateRefreshToken(payload);
 
   return {
-    accessToken,
+    accessToken: newAccessToken,
     refreshToken: newRefreshToken,
   };
 };
