@@ -24,7 +24,10 @@ export const register = async (req, res) => {
       });
     }
 
-    if (error.message === "Email is required.") {
+    if (
+      error.message === "Email or phone number is required." ||
+      error.message === "Invalid user role."
+    ) {
       return res.status(400).json({
         success: false,
         message: error.message,
@@ -50,8 +53,6 @@ export const login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: result.message,
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
       data: result.user,
     });
   } catch (error) {
