@@ -1,7 +1,8 @@
 import pool from "../common/config/db.js";
 
 /**
- * Find a user by email.
+ * Find a user by email (Case-Insensitive).
+ * PRD Section 11.1
  *
  * @param {string} email
  * @returns {Promise<Object|null>}
@@ -10,7 +11,7 @@ export const findUserByEmail = async (email) => {
   const query = `
     SELECT *
     FROM users
-    WHERE email = $1
+    WHERE LOWER(email) = LOWER($1)
     LIMIT 1;
   `;
 
@@ -40,13 +41,14 @@ export const findUserByPhone = async (phone) => {
 
 /**
  * Find a user by ID.
+ * Excludes sensitive fields like password_hash.
  *
  * @param {string} id
  * @returns {Promise<Object|null>}
  */
 export const findUserById = async (id) => {
   const query = `
-    SELECT *
+    SELECT id, full_name, email, phone, role, roles, is_verified, created_at, updated_at
     FROM users
     WHERE id = $1
     LIMIT 1;
@@ -74,6 +76,7 @@ export const createUser = async ({
 }) => {
   // Normalize roles: prioritize roles array, fallback to single role string
   const userRoles = roles || (Array.isArray(role) ? role : [role]);
+  const primaryRole = userRoles[0] || "seeker";
 
   const query = `
     INSERT INTO users (
@@ -81,14 +84,16 @@ export const createUser = async ({
       email,
       phone,
       password_hash,
+      role,
       roles
     )
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING
       id,
       full_name,
       email,
       phone,
+      role,
       roles,
       is_verified,
       created_at,
@@ -97,9 +102,10 @@ export const createUser = async ({
 
   const values = [
     full_name,
-    email || null,
+    email ? email.toLowerCase() : null,
     phone || null,
     password_hash,
+    primaryRole,
     userRoles,
   ];
 
@@ -114,10 +120,7 @@ export const createUser = async ({
  * @param {Object} credentials
  * @returns {Promise<Object|null>}
  */
-export const findUserByEmailOrPhone = async ({
-  email,
-  phone,
-}) => {
+export const findUserByEmailOrPhone = async ({ email, phone }) => {
   let query = "";
   let values = [];
 
@@ -125,7 +128,7 @@ export const findUserByEmailOrPhone = async ({
     query = `
       SELECT *
       FROM users
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER($1)
       LIMIT 1;
     `;
     values = [email];
@@ -159,7 +162,7 @@ export const verifyUser = async (id) => {
       is_verified = TRUE,
       updated_at = NOW()
     WHERE id = $1
-    RETURNING *;
+    RETURNING id, full_name, email, is_verified, updated_at;
   `;
 
   const { rows } = await pool.query(query, [id]);
@@ -174,17 +177,14 @@ export const verifyUser = async (id) => {
  * @param {string} password_hash
  * @returns {Promise<Object|null>}
  */
-export const updatePassword = async (
-  id,
-  password_hash
-) => {
+export const updatePassword = async (id, password_hash) => {
   const query = `
     UPDATE users
     SET
       password_hash = $1,
       updated_at = NOW()
     WHERE id = $2
-    RETURNING *;
+    RETURNING id, updated_at;
   `;
 
   const { rows } = await pool.query(query, [password_hash, id]);
