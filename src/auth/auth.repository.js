@@ -8,6 +8,7 @@ import pool from "../common/config/db.js";
  * @returns {Promise<Object|null>}
  */
 export const findUserByEmail = async (email) => {
+  if (!email) return null;
   const query = `
     SELECT *
     FROM users
@@ -15,8 +16,7 @@ export const findUserByEmail = async (email) => {
     LIMIT 1;
   `;
 
-  const { rows } = await pool.query(query, [email]);
-
+  const { rows } = await pool.query(query, [email.toLowerCase()]);
   return rows[0] || null;
 };
 
@@ -27,6 +27,7 @@ export const findUserByEmail = async (email) => {
  * @returns {Promise<Object|null>}
  */
 export const findUserByPhone = async (phone) => {
+  if (!phone) return null;
   const query = `
     SELECT *
     FROM users
@@ -35,7 +36,6 @@ export const findUserByPhone = async (phone) => {
   `;
 
   const { rows } = await pool.query(query, [phone]);
-
   return rows[0] || null;
 };
 
@@ -47,6 +47,7 @@ export const findUserByPhone = async (phone) => {
  * @returns {Promise<Object|null>}
  */
 export const findUserById = async (id) => {
+  if (!id) return null;
   const query = `
     SELECT id, full_name, email, phone, role, roles, is_verified, created_at, updated_at
     FROM users
@@ -55,7 +56,6 @@ export const findUserById = async (id) => {
   `;
 
   const { rows } = await pool.query(query, [id]);
-
   return rows[0] || null;
 };
 
@@ -110,7 +110,6 @@ export const createUser = async ({
   ];
 
   const { rows } = await pool.query(query, values);
-
   return rows[0];
 };
 
@@ -121,6 +120,8 @@ export const createUser = async ({
  * @returns {Promise<Object|null>}
  */
 export const findUserByEmailOrPhone = async ({ email, phone }) => {
+  if (!email && !phone) return null;
+
   let query = "";
   let values = [];
 
@@ -131,7 +132,7 @@ export const findUserByEmailOrPhone = async ({ email, phone }) => {
       WHERE LOWER(email) = LOWER($1)
       LIMIT 1;
     `;
-    values = [email];
+    values = [email.toLowerCase()];
   } else if (phone) {
     query = `
       SELECT *
@@ -140,12 +141,9 @@ export const findUserByEmailOrPhone = async ({ email, phone }) => {
       LIMIT 1;
     `;
     values = [phone];
-  } else {
-    return null;
   }
 
   const { rows } = await pool.query(query, values);
-
   return rows[0] || null;
 };
 
@@ -156,6 +154,7 @@ export const findUserByEmailOrPhone = async ({ email, phone }) => {
  * @returns {Promise<Object|null>}
  */
 export const verifyUser = async (id) => {
+  if (!id) return null;
   const query = `
     UPDATE users
     SET
@@ -166,7 +165,6 @@ export const verifyUser = async (id) => {
   `;
 
   const { rows } = await pool.query(query, [id]);
-
   return rows[0] || null;
 };
 
@@ -178,6 +176,7 @@ export const verifyUser = async (id) => {
  * @returns {Promise<Object|null>}
  */
 export const updatePassword = async (id, password_hash) => {
+  if (!id || !password_hash) return null;
   const query = `
     UPDATE users
     SET
@@ -188,7 +187,6 @@ export const updatePassword = async (id, password_hash) => {
   `;
 
   const { rows } = await pool.query(query, [password_hash, id]);
-
   return rows[0] || null;
 };
 
@@ -199,6 +197,7 @@ export const updatePassword = async (id, password_hash) => {
  * @returns {Promise<Object|null>}
  */
 export const findHostProfileByUserId = async (userId) => {
+  if (!userId) return null;
   const query = `
     SELECT *
     FROM host_profiles
@@ -207,7 +206,6 @@ export const findHostProfileByUserId = async (userId) => {
   `;
 
   const { rows } = await pool.query(query, [userId]);
-
   return rows[0] || null;
 };
 
@@ -218,6 +216,7 @@ export const findHostProfileByUserId = async (userId) => {
  * @returns {Promise<Object>}
  */
 export const createHostProfile = async (userId) => {
+  if (!userId) throw new Error("userId is required to create a host profile.");
   const query = `
     INSERT INTO host_profiles (user_id)
     VALUES ($1)
@@ -225,6 +224,5 @@ export const createHostProfile = async (userId) => {
   `;
 
   const { rows } = await pool.query(query, [userId]);
-
   return rows[0];
 };
