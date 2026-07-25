@@ -3,6 +3,7 @@ import * as authService from "./auth.service.js";
 /**
  * Register a new user
  * POST /api/auth/register
+ * PRD Section 11.1 & 16.1
  */
 export const register = async (req, res) => {
   try {
@@ -18,6 +19,13 @@ export const register = async (req, res) => {
       error.message === "Phone number already registered."
     ) {
       return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (error.message === "Email is required.") {
+      return res.status(400).json({
         success: false,
         message: error.message,
       });
@@ -42,9 +50,9 @@ export const login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: result.message,
-      data: result.user,
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
+      data: result.user,
     });
   } catch (error) {
     if (error.message === "Invalid email or password.") {
@@ -65,6 +73,7 @@ export const login = async (req, res) => {
 /**
  * Refresh Access Token
  * POST /api/auth/refresh
+ * PRD Section 11.1 & 16.1
  */
 export const refresh = async (req, res) => {
   try {
