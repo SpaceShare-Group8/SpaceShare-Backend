@@ -1,8 +1,7 @@
 import * as authService from "./auth.service.js";
 
 /**
- * Register a new user
- * POST /api/auth/register
+ * Register Controller
  */
 export const register = async (req, res) => {
   try {
@@ -13,16 +12,26 @@ export const register = async (req, res) => {
       data: result.user,
     });
   } catch (error) {
-    return res.status(400).json({
+    if (
+      error.message === "Email already registered." ||
+      error.message === "Phone number already registered."
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    console.error("Register error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Something went wrong. Please try again.",
     });
   }
 };
 
 /**
- * Login user
- * POST /api/auth/login
+ * Login Controller
+ * PRD Section 11.1: Email + Password Authentication
  */
 export const login = async (req, res) => {
   try {
@@ -34,31 +43,23 @@ export const login = async (req, res) => {
       refreshToken: result.refreshToken,
       data: result.user,
     });
-} catch (error) {
-  if (
-    error.message === "Invalid credentials." ||
-    error.message === "Email is required." ||
-    error.message === "Phone number is required." ||
-    error.message === "Either email or phone number is required."
-  ) {
-    return res.status(401).json({
+  } catch (error) {
+    if (error.message === "Invalid email or password.") {
+      return res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    console.error("Login error:", error);
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Something went wrong. Please try again.",
     });
   }
-
-  console.error("Login error:", error);
-
-  return res.status(500).json({
-    success: false,
-    message: "Something went wrong. Please try again.",
-  });
-}
 };
 
 /**
- * Refresh Access Token
- * POST /api/auth/refresh
+ * Refresh Token Controller
  */
 export const refresh = async (req, res) => {
   try {
