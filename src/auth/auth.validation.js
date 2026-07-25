@@ -1,7 +1,7 @@
 import { body, validationResult } from "express-validator";
 
 /**
- * Handle validation errors
+ * Handle validation errors middleware
  */
 export const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -16,18 +16,10 @@ export const validate = (req, res, next) => {
 };
 
 /**
- * Register Validation
+ * Register Validation Rules
+ * PRD Section 11.1: Email is login identifier; Phone is a required profile field at signup.
  */
 export const registerValidation = [
-  body().custom((value, { req }) => {
-    const email = req.body.email?.trim();
-    const phone = req.body.phone?.trim();
-    if (!email && !phone) {
-      throw new Error("Either email or phone number is required.");
-    }
-    return true;
-  }),
-  
   body("full_name")
     .trim()
     .notEmpty()
@@ -36,12 +28,16 @@ export const registerValidation = [
     .withMessage("Full name must be between 3 and 150 characters."),
 
   body("email")
-    .optional({ checkFalsy: true })
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address."),
 
   body("phone")
-    .optional({ checkFalsy: true })
+    .trim()
+    .notEmpty()
+    .withMessage("Phone number is required as a profile field.")
     .isMobilePhone("any")
     .withMessage("Please provide a valid phone number."),
 
@@ -53,34 +49,29 @@ export const registerValidation = [
 
   body("role")
     .optional()
-    .isIn(["seeker", "host", "corporate_admin", "admin"])
-    .withMessage("Role must be either seeker, host, corporate_admin, or admin."),
+    .custom((role) => {
+      const validRoles = ["seeker", "host", "corporate_admin"];
+      if (Array.isArray(role)) {
+        return role.every((r) => validRoles.includes(r));
+      }
+      return validRoles.includes(role);
+    })
+    .withMessage("Role must be seeker, host, corporate_admin, or a combination."),
 
   validate,
 ];
 
 /**
- * Login Validation
+ * Login Validation Rules
+ * PRD Section 11.1: Email (login identifier) + Password only.
  */
 export const loginValidation = [
-  body().custom((value, { req }) => {
-    const email = req.body.email?.trim();
-    const phone = req.body.phone?.trim();
-    if (!email && !phone) {
-      throw new Error("Either email or phone number is required.");
-    }
-    return true;
-  }),
-  
   body("email")
-    .optional({ checkFalsy: true })
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address."),
-
-  body("phone")
-    .optional({ checkFalsy: true })
-    .isMobilePhone("any")
-    .withMessage("Please provide a valid phone number."),
 
   body("password")
     .notEmpty()
