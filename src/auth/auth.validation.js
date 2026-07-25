@@ -81,7 +81,8 @@ export const loginValidation = [
 ];
 
 /**
- * Refresh Token Validation
+ * Refresh Token Validation Rules
+ * PRD Section 11.1 & 16.1
  */
 export const refreshValidation = [
   body("refreshToken")
