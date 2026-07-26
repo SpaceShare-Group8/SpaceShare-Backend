@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 
+// Environment Variable Configuration with Fallbacks
 const ACCESS_TOKEN_SECRET =
   process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "default_access_secret";
 const REFRESH_TOKEN_SECRET =
@@ -15,18 +16,32 @@ const PASSWORD_RESET_EXPIRES_IN =
   process.env.JWT_PASSWORD_RESET_EXPIRES_IN || "15m";
 
 /**
+ * Normalizes user roles into a consistent array structure.
+ * Supports single strings, arrays, and fallback defaults.
+ */
+const normalizeRoles = (userOrPayload) => {
+  if (Array.isArray(userOrPayload.roles) && userOrPayload.roles.length > 0) {
+    return userOrPayload.roles;
+  }
+  if (userOrPayload.role) {
+    return [userOrPayload.role];
+  }
+  return ["seeker"];
+};
+
+/**
  * Generate Access Token
- * Accepts either a user model instance or a plain payload object
+ * Formats payload to include ID, email, normalized roles, and corporate account details if present.
  */
 export const generateAccessToken = (userOrPayload) => {
   const payload = {
-    id: userOrPayload.id,
+    id: userOrPayload.id || userOrPayload._id,
     email: userOrPayload.email,
-    roles: Array.isArray(userOrPayload.roles)
-      ? userOrPayload.roles
-      : userOrPayload.role
-      ? [userOrPayload.role]
-      : ["seeker"],
+    roles: normalizeRoles(userOrPayload),
+    // Attach corporate metadata if the user belongs to a corporate account
+    ...(userOrPayload.corporateAccountId && {
+      corporateAccountId: userOrPayload.corporateAccountId,
+    }),
   };
 
   return jwt.sign(payload, ACCESS_TOKEN_SECRET, {
@@ -46,7 +61,7 @@ export const verifyAccessToken = (token) => {
  */
 export const generateRefreshToken = (userOrPayload) => {
   return jwt.sign(
-    { id: userOrPayload.id },
+    { id: userOrPayload.id || userOrPayload._id },
     REFRESH_TOKEN_SECRET,
     { expiresIn: REFRESH_TOKEN_EXPIRES_IN }
   );
@@ -64,7 +79,7 @@ export const verifyRefreshToken = (token) => {
  */
 export const generatePasswordResetToken = (userOrPayload) => {
   return jwt.sign(
-    { id: userOrPayload.id, email: userOrPayload.email },
+    { id: userOrPayload.id || userOrPayload._id, email: userOrPayload.email },
     PASSWORD_RESET_SECRET,
     { expiresIn: PASSWORD_RESET_EXPIRES_IN }
   );
@@ -75,4 +90,11 @@ export const generatePasswordResetToken = (userOrPayload) => {
  */
 export const verifyPasswordResetToken = (token) => {
   return jwt.verify(token, PASSWORD_RESET_SECRET);
+};
+
+/**
+ * Decode Token without verification (useful for client-side inspection or pre-checks)
+ */
+export const decodeToken = (token) => {
+  return jwt.decode(token);
 };
