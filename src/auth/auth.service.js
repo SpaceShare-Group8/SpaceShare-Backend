@@ -25,6 +25,20 @@ export const register = async (userData) => {
 
   // Normalize roles input (support array or single string)
   const userRoles = roles || (Array.isArray(role) ? role : [role]);
+  
+  const allowedRoles = [
+    "seeker",
+    "host",
+    "corporate_admin",
+    "admin",
+  ];
+  
+  for (const currentRole of userRoles) {
+    if (!allowedRoles.includes(currentRole)) {
+      throw new Error ("Invalaid user role.");
+    }
+  }
+
 
   // Check if email already exists
   if (email) {
@@ -76,6 +90,8 @@ export const register = async (userData) => {
 
   return {
     message: "User registered successfully.",
+     accessToken, 
+     refreshToken,
     user: {
       id: user.id,
       full_name: user.full_name,
@@ -84,8 +100,6 @@ export const register = async (userData) => {
       role: user.role,
       roles: user.roles,
       is_verified: user.is_verified,
-      accessToken,
-      refreshToken,
     },
   };
 };
@@ -141,6 +155,8 @@ export const login = async ({ email, phone, password }) => {
 
   return {
     message: "Login successful.",
+    accessToken,
+    refreshToken,
     user: {
       id: user.id,
       full_name: user.full_name,
@@ -149,8 +165,6 @@ export const login = async ({ email, phone, password }) => {
       role: user.role,
       roles: userRoles,
       is_verified: user.is_verified,
-      accessToken,
-      refreshToken,
     },
   };
 };

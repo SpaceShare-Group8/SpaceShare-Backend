@@ -11,6 +11,8 @@ export const register = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: result.message,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       data: result.user,
     });
   } catch (error) {
@@ -53,10 +55,15 @@ export const login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: result.message,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       data: result.user,
     });
   } catch (error) {
-    if (error.message === "Invalid email or password.") {
+    if (error.message === "Invalid email or password." ||
+      error.message === "Email or phone number is required."||
+      error.message === "Password is required."
+     ) {
       return res.status(401).json({
         success: false,
         message: error.message,

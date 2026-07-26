@@ -51,6 +51,7 @@ export const protect = async (req, res, next) => {
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
+      role: user.rol,
       roles: normalizedRoles,
     };
 
@@ -77,7 +78,7 @@ export const authorize = (...allowedRoles) => {
       });
     }
 
-    const userRoles = req.user.roles || [];
+    const userRoles = Array.isArray(req.user.roles) ? req.user.roles: [];
     const hasPermission = allowedRoles.some((role) => userRoles.includes(role));
 
     if (!hasPermission) {

@@ -1,4 +1,20 @@
-import { body } from "express-validator";
+import { body, validationResult} from "express-validator";
+
+//Handles validation errors
+export const validate = (req, res, next) => {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed.",
+      errors: errors.array(),
+    });
+  }
+
+  next();
+};
+
 
 /**
  * Validation rules for user registration
@@ -38,21 +54,22 @@ export const registerValidation = [
 
   body("role")
     .optional()
-    .isIn(["seeker", "host", "admin"])
-    .withMessage("Invalid role specified. Must be 'seeker', 'host', or 'admin'."),
+    .isIn(["seeker", "host", "corporate_admin", "admin"])
+    .withMessage("Invalid role specified. Must be 'seeker', 'host','corporate_admin', or 'admin'."),
 
-  body("roles")
-    .optional()
-    .isArray()
-    .withMessage("Roles must be an array of valid role strings.")
-    .custom((roles) => {
-      const validRoles = ["seeker", "host", "admin"];
-      const isValid = roles.every((r) => validRoles.includes(r));
-      if (!isValid) {
-        throw new Error("Roles contains invalid entries. Allowed: seeker, host, admin.");
-      }
-      return true;
-    }),
+  // body("roles")
+  //   .optional()
+  //   .isArray({ min:1 })
+  //   .withMessage("Roles must be an array of valid role strings.")
+  //   .custom((roles) => {
+  //     const validRoles = ["seeker", "host", "corporate_admin", "admin"];
+  //     const isValid = roles.every((r) => validRoles.includes(r));
+  //     if (!isValid) {
+  //       throw new Error("Roles contains invalid entries. Allowed: seeker, host, corporate_admin, admin.");
+  //     }
+  //     return true;
+  //   }),
+
 
   // Custom validator to ensure either email OR phone is provided
   body().custom((value, { req }) => {
@@ -61,6 +78,7 @@ export const registerValidation = [
     }
     return true;
   }),
+  validate,
 ];
 
 /**
@@ -78,7 +96,9 @@ export const loginValidation = [
 
   body("phone")
     .optional({ checkFalsy: true })
-    .trim(),
+    .trim()
+    .matches(/^\+?[1-9]\d{1,14}$/)
+    .withMessage("Please provide a valid phone number."),
 
   body("password")
     .notEmpty()
@@ -91,6 +111,7 @@ export const loginValidation = [
     }
     return true;
   }),
+  validate,
 ];
 
 /**
@@ -101,4 +122,5 @@ export const refreshValidation = [
   body("refreshToken")
     .notEmpty()
     .withMessage("Refresh token is required."),
+    validate,
 ];
