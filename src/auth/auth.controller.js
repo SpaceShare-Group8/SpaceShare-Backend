@@ -3,11 +3,11 @@ import * as authService from "./auth.service.js";
 /**
  * Register a new user
  * POST /api/auth/register
- * PRD Section 11.1 & 16.1
  */
 export const register = async (req, res) => {
   try {
     const result = await authService.register(req.body);
+
     return res.status(201).json({
       success: true,
       message: result.message,
@@ -37,6 +37,7 @@ export const register = async (req, res) => {
     }
 
     console.error("Register error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Something went wrong. Please try again.",
@@ -47,11 +48,11 @@ export const register = async (req, res) => {
 /**
  * Login user
  * POST /api/auth/login
- * PRD Section 11.1: Email + Password Authentication
  */
 export const login = async (req, res) => {
   try {
     const result = await authService.login(req.body);
+
     return res.status(200).json({
       success: true,
       message: result.message,
@@ -60,17 +61,27 @@ export const login = async (req, res) => {
       data: result.user,
     });
   } catch (error) {
-    if (error.message === "Invalid email or password." ||
-      error.message === "Email or phone number is required."||
-      error.message === "Password is required."
-     ) {
+    if (
+      error.message === "Invalid email or password."
+    ) {
       return res.status(401).json({
         success: false,
         message: error.message,
       });
     }
 
+    if (
+      error.message === "Email or phone number is required." ||
+      error.message === "Password is required."
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     console.error("Login error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Something went wrong. Please try again.",
@@ -81,12 +92,13 @@ export const login = async (req, res) => {
 /**
  * Refresh Access Token
  * POST /api/auth/refresh
- * PRD Section 11.1 & 16.1
  */
 export const refresh = async (req, res) => {
   try {
     const { refreshToken } = req.body;
+
     const result = await authService.refresh(refreshToken);
+
     return res.status(200).json({
       success: true,
       message: "Access token refreshed successfully.",
@@ -95,18 +107,107 @@ export const refresh = async (req, res) => {
     });
   } catch (error) {
     if (
-      error.message === "Refresh token is required." ||
-      error.message === "User not found." ||
-      error.name === "JsonWebTokenError" ||
-      error.name === "TokenExpiredError"
+      error.message === "Refresh token is required."
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (
+      error.message === "Invalid or expired refresh token." ||
+      error.message === "User not found."
     ) {
       return res.status(401).json({
         success: false,
-        message: "Invalid or expired refresh token.",
+        message: error.message,
       });
     }
 
     console.error("Refresh error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again.",
+    });
+  }
+};
+
+/**
+ * Forgot Password
+ * POST /api/auth/forgot-password
+ */
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const result = await authService.forgotPassword(email);
+
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      ...(result.resetToken && {
+        resetToken: result.resetToken,
+      }),
+    });
+  } catch (error) {
+    if (error.message === "Email is required.") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error("Forgot Password Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again.",
+    });
+  }
+};
+
+/**
+ * Reset Password
+ * POST /api/auth/reset-password
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    const result = await authService.resetPassword(
+      token,
+      password
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+    });
+  } catch (error) {
+    if (
+      error.message === "Reset token is required." ||
+      error.message === "New password is required."
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (
+      error.message === "Invalid or expired reset token." ||
+      error.message === "User not found."
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error("Reset Password Error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Something went wrong. Please try again.",

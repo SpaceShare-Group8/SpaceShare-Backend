@@ -1,14 +1,22 @@
 import { verifyAccessToken } from "../utils/jwt.js";
-import { findUserById, findHostProfileByUserId } from "../../auth/auth.repository.js";
+import {
+  findUserById,
+  findHostProfileByUserId,
+} from "../../auth/auth.repository.js";
 
 /**
- * Protect routes - verifies JWT and attaches current user context.
- * Performs a single database lookup for active account validation.
- * PRD Section 11.1 & 11.2
+ * Protect routes
+ * Verifies JWT, validates active user account,
+ * and attaches authenticated user to the request.
+ *
+ * PRD Sections:
+ * - 11.1 Authentication
+ * - 11.2 Authorization
  */
 export const protect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
@@ -18,19 +26,19 @@ export const protect = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    // 1. Verify JWT Token signature and expiration
     let decoded;
+
     try {
       decoded = verifyAccessToken(token);
-    } catch (jwtError) {
+    } catch (error) {
       return res.status(401).json({
         success: false,
         message: "Invalid or expired token.",
       });
     }
 
-    // 2. Retrieve user from database to ensure account still exists
     const user = await findUserById(decoded.id);
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -38,26 +46,19 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // 3. Normalize roles into a guaranteed Array
-    const normalizedRoles = Array.isArray(user.roles)
-      ? user.roles
-      : user.role
-      ? [user.role]
-      : ["seeker"];
-
-    // 4. Attach structured user payload to request object
     req.user = {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
-      role: user.rol,
-      roles: normalizedRoles,
+      role: user.role,
+      roles: [user.role], // Keeps middleware compatible if multiple roles are introduced later
     };
 
-    return next();
+    next();
   } catch (error) {
-    console.error("Authentication error in protect middleware:", error);
+    console.error("Authentication middleware error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error during authentication.",
@@ -66,8 +67,14 @@ export const protect = async (req, res, next) => {
 };
 
 /**
- * Authorize roles
- * PRD Section 9: Supports single or multi-role checking
+ * Role Authorization Middleware
+ *
+ * Usage:
+ * authorize("admin")
+ * authorize("host")
+ * authorize("host", "admin")
+ *
+ * PRD Section 9
  */
 export const authorize = (...allowedRoles) => {
   return (req, res, next) => {
@@ -78,8 +85,13 @@ export const authorize = (...allowedRoles) => {
       });
     }
 
-    const userRoles = Array.isArray(req.user.roles) ? req.user.roles: [];
-    const hasPermission = allowedRoles.some((role) => userRoles.includes(role));
+    const userRoles = Array.isArray(req.user.roles)
+      ? req.user.roles
+      : [req.user.role];
+
+    const hasPermission = allowedRoles.some((role) =>
+      userRoles.includes(role)
+    );
 
     if (!hasPermission) {
       return res.status(403).json({
@@ -88,44 +100,61 @@ export const authorize = (...allowedRoles) => {
       });
     }
 
-    return next();
+    next();
   };
 };
 
 /**
- * Require a verified host account
- * Fetches host status on-demand only when a route requires host verification.
- * PRD Section 10.2, 11.5 & Section 14 Schema
+ * Require Verified Host Middleware
+ *
+ * Used on endpoints where only verified Hosts
+ * are allowed to perform actions.
+ *
+ * PRD Sections:
+ * - 10.2 Host Verification
+ * - 11.5 Host Authorization
+ * - Section 14 Database Schema
  */
 export const requireVerifiedHost = async (req, res, next) => {
   try {
-    if (!req.user || !req.user.roles.includes("host")) {
+    if (!req.user || req.user.role !== "host") {
       return res.status(403).json({
         success: false,
-        message: "Forbidden. Requires host role.",
+        message: "Forbidden. Host account required.",
       });
     }
 
-    // On-demand database lookup for host profile
     const hostProfile = await findHostProfileByUserId(req.user.id);
-    const verificationStatus = hostProfile?.verification_status ?? "pending";
 
-    // PRD Statuses: 'approved' or 'verified'
-    const isApproved =
-      verificationStatus === "approved" || verificationStatus === "verified";
+    if (!hostProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Host profile not found.",
+      });
+    }
 
-    if (!isApproved) {
+    const verificationStatus =
+      hostProfile.verification_status || "pending";
+
+    const isVerified =
+      verificationStatus === "approved" ||
+      verificationStatus === "verified";
+
+    if (!isVerified) {
       return res.status(403).json({
         success: false,
-        message: "Host account is pending verification by Platform Admin.",
+        message:
+          "Host account is pending verification by Platform Admin.",
         verification_status: verificationStatus,
       });
     }
 
     req.hostProfile = hostProfile;
-    return next();
+
+    next();
   } catch (error) {
-    console.error("Error in requireVerifiedHost middleware:", error);
+    console.error("Verified host middleware error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Server error while verifying host status.",

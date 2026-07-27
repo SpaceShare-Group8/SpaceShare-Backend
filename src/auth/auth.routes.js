@@ -4,12 +4,17 @@ import {
   register,
   login,
   refresh,
+  forgotPassword,
+  resetPassword,
 } from "./auth.controller.js";
 
 import {
   registerValidation,
   loginValidation,
   refreshValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation,
+  validate,
 } from "./auth.validation.js";
 
 import { protect } from "../common/middleware/auth.middleware.js";
@@ -24,6 +29,7 @@ const router = express.Router();
 router.post(
   "/register",
   registerValidation,
+  validate,
   register
 );
 
@@ -35,6 +41,7 @@ router.post(
 router.post(
   "/login",
   loginValidation,
+  validate,
   login
 );
 
@@ -46,7 +53,32 @@ router.post(
 router.post(
   "/refresh",
   refreshValidation,
+  validate,
   refresh
+);
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Generate password reset token
+ * @access  Public
+ */
+router.post(
+  "/forgot-password",
+  forgotPasswordValidation,
+  validate,
+  forgotPassword
+);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset account password
+ * @access  Public
+ */
+router.post(
+  "/reset-password",
+  resetPasswordValidation,
+  validate,
+  resetPassword
 );
 
 /**

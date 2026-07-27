@@ -124,3 +124,42 @@ export const refreshValidation = [
     .withMessage("Refresh token is required."),
     validate,
 ];
+
+/**
+ * Validation rules for Forgot Password
+ * POST /api/auth/forgot-password
+ */
+export const forgotPasswordValidation = [
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required.")
+    .isEmail()
+    .withMessage("Please provide a valid email address.")
+    .normalizeEmail(),
+
+    validate,
+];
+
+/**
+ * Validation rules for Reset Password
+ * POST /api/auth/reset-password
+ */
+export const resetPasswordValidation = [
+  body("token")
+    .notEmpty()
+    .withMessage("Reset token is required."),
+
+  body("password")
+    .notEmpty()
+    .withMessage("New password is required.")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters long.")
+    .matches(/\d/)
+    .withMessage("Password must contain at least one number.")
+    .matches(/[a-zA-Z]/)
+    .withMessage("Password must contain at least one letter."),
+
+    validate,
+];
+
