@@ -4,101 +4,102 @@ import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  generatePasswordResetToken,
+  verifyPasswordResetToken,
 } from "../common/utils/jwt.js";
 
 /**
- * Register a new user
- * Handles email/phone uniqueness check, password hashing, user insertion,
- * automatic host_profile creation if role includes "host", and JWT generation.
- * PRD Section 11.1 & 16.1
- *
- * @param {Object} userData
- * @returns {Promise<Object>}
+ * Register a new user.
  */
 export const register = async (userData) => {
-  const { full_name, email, phone, password, role = "seeker", roles } = userData;
+  const {
+    full_name,
+    email,
+    phone,
+    password,
+    role = "seeker",
+  } = userData;
 
-  // Validate presence of email or phone
   if (!email && !phone) {
     throw new Error("Email or phone number is required.");
   }
 
-  // Normalize roles input (support array or single string)
-  const userRoles = roles || (Array.isArray(role) ? role : [role]);
+  const allowedRoles = [
+    "seeker",
+    "host",
+    "corporate_admin",
+    "admin",
+  ];
 
-  // Check if email already exists
+  if (!allowedRoles.includes(role)) {
+    throw new Error("Invalid user role.");
+  }
+
   if (email) {
     const existingEmail = await authRepository.findUserByEmail(email);
+
     if (existingEmail) {
       throw new Error("Email already registered.");
     }
   }
 
-  // Check if phone already exists
   if (phone) {
     const existingPhone = await authRepository.findUserByPhone(phone);
+
     if (existingPhone) {
       throw new Error("Phone number already registered.");
     }
   }
 
-  // Hash user password
   const password_hash = await hashPassword(password);
 
-  // Insert user into database
   const user = await authRepository.createUser({
     full_name,
     email,
     phone,
     password_hash,
-    role: userRoles[0],
-    roles: userRoles,
+    role,
   });
 
-  // Automatically initialize host profile if registering as a host
-  if (userRoles.includes("host")) {
-    const existingHostProfile = await authRepository.findHostProfileByUserId(user.id);
-    if (!existingHostProfile) {
+  // Automatically create host profile
+  if (user.role === "host") {
+    const hostProfile =
+      await authRepository.findHostProfileByUserId(user.id);
+
+    if (!hostProfile) {
       await authRepository.createHostProfile(user.id);
     }
   }
 
-  // Generate auth tokens
   const payload = {
     id: user.id,
     email: user.email,
     role: user.role,
-    roles: user.roles,
   };
-
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken(payload);
 
   return {
     message: "User registered successfully.",
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
     user: {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
       role: user.role,
-      roles: user.roles,
       is_verified: user.is_verified,
-      accessToken,
-      refreshToken,
     },
   };
 };
 
 /**
- * Login user
- * Verifies email/phone credentials, checks password match, and returns tokens.
- * PRD Section 11.1
- *
- * @param {Object} credentials
- * @returns {Promise<Object>}
+ * Login user.
  */
-export const login = async ({ email, phone, password }) => {
+export const login = async ({
+  email,
+  phone,
+  password,
+}) => {
   if (!email && !phone) {
     throw new Error("Email or phone number is required.");
   }
@@ -107,72 +108,73 @@ export const login = async ({ email, phone, password }) => {
     throw new Error("Password is required.");
   }
 
-  // Fetch user by email or phone
-  const user = await authRepository.findUserByEmailOrPhone({ email, phone });
+  const user = await authRepository.findUserByEmailOrPhone({
+    email,
+    phone,
+  });
+
   if (!user) {
     throw new Error("Invalid email or password.");
   }
 
-  // Verify password hash
-  const isPasswordValid = await comparePassword(password, user.password_hash);
+  const isPasswordValid = await comparePassword(
+    password,
+    user.password_hash
+  );
+
   if (!isPasswordValid) {
     throw new Error("Invalid email or password.");
   }
 
-  // Ensure user has host profile if they hold host role
-  const userRoles = user.roles || [user.role];
-  if (userRoles.includes("host")) {
-    const hostProfile = await authRepository.findHostProfileByUserId(user.id);
+  // Automatically create host profile
+  if (user.role === "host") {
+    const hostProfile =
+      await authRepository.findHostProfileByUserId(user.id);
+
     if (!hostProfile) {
       await authRepository.createHostProfile(user.id);
     }
   }
 
-  // Generate auth tokens
   const payload = {
     id: user.id,
     email: user.email,
     role: user.role,
-    roles: userRoles,
   };
-
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken(payload);
 
   return {
     message: "Login successful.",
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
     user: {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
       role: user.role,
-      roles: userRoles,
       is_verified: user.is_verified,
-      accessToken,
-      refreshToken,
     },
   };
 };
 
 /**
- * Refresh Access Token
- * Validates refresh token, retrieves user, and issues a fresh token pair.
- * PRD Section 11.1 & 16.1
- *
- * @param {string} refreshToken
- * @returns {Promise<Object>}
+ * Refresh access token.
  */
 export const refresh = async (refreshToken) => {
   if (!refreshToken) {
     throw new Error("Refresh token is required.");
   }
 
-  // Verify signature and expiration of refresh token
-  const decoded = verifyRefreshToken(refreshToken);
+  let decoded;
 
-  // Retrieve user to make sure account still exists
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    throw new Error("Invalid or expired refresh token.");
+  }
+
   const user = await authRepository.findUserById(decoded.id);
+
   if (!user) {
     throw new Error("User not found.");
   }
@@ -181,14 +183,85 @@ export const refresh = async (refreshToken) => {
     id: user.id,
     email: user.email,
     role: user.role,
-    roles: user.roles || [user.role],
   };
 
-  const newAccessToken = generateAccessToken(payload);
-  const newRefreshToken = generateRefreshToken(payload);
+  return {
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
+  };
+};
+
+/**
+ * Forgot Password.
+ */
+export const forgotPassword = async (email) => {
+  if (!email) {
+    throw new Error("Email is required.");
+  }
+
+  const user =
+    await authRepository.findUserForPasswordReset(email);
+
+  // Prevent email enumeration
+  if (!user) {
+    return {
+      message:
+        "If an account exists with this email, password reset instructions have been sent.",
+    };
+  }
+
+  const resetToken = generatePasswordResetToken(user);
+
+  // Temporary until email service is integrated
+  console.log("Password Reset Token:", resetToken);
 
   return {
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
+    message:
+      "If an account exists with this email, password reset instructions have been sent.",
+    resetToken:
+      process.env.NODE_ENV === "development"
+        ? resetToken
+        : undefined,
+  };
+};
+
+/**
+ * Reset Password.
+ */
+export const resetPassword = async (
+  token,
+  newPassword
+) => {
+  if (!token) {
+    throw new Error("Reset token is required.");
+  }
+
+  if (!newPassword) {
+    throw new Error("New password is required.");
+  }
+
+  let decoded;
+
+  try {
+    decoded = verifyPasswordResetToken(token);
+  } catch {
+    throw new Error("Invalid or expired reset token.");
+  }
+
+  const user = await authRepository.findUserById(decoded.id);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const password_hash = await hashPassword(newPassword);
+
+  await authRepository.updatePassword(
+    user.id,
+    password_hash
+  );
+
+  return {
+    message: "Password reset successfully.",
   };
 };
