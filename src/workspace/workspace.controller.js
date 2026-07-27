@@ -1,12 +1,17 @@
 import cloudinary from '../common/config/cloudinary.js';
 import {
-    createWorkspace,
-    getWorkspaceById,
-    listWorkspaces,
-    updateWorkspace,
-    deleteWorkspace,
-    addWorkspacePhoto,
-  } from './workspace.service.js';
+  createWorkspace,
+  getWorkspaceById,
+  listWorkspaces,
+  updateWorkspace,
+  deleteWorkspace,
+  addWorkspacePhoto,
+  countWorkspacePhotos,
+  updateWorkspaceMediaStatus,
+  updateWorkspaceStatusByAdmin,
+  getWorkspaceHostUserId,
+  notifyHost,
+} from './workspace.service.js';
 
   export async function handleCreateWorkspace(req, res) {
     try {
@@ -177,42 +182,102 @@ export async function handleGetWorkspaceById(req, res) {
     }
   }
 
-export async function handleUploadWorkspacePhoto(req, res) {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
+  export async function handleUploadWorkspacePhoto(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          status: false,
+          message: 'No image file provided',
+        });
+      }
+  
+      const uploadResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: 'spaceshare/workspaces' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        stream.end(req.file.buffer);
+      });
+  
+      const photo = await addWorkspacePhoto(
+        req.params.id,
+        uploadResult.secure_url,
+        uploadResult.public_id
+      );
+  
+      const photoCount = await countWorkspacePhotos(req.params.id);
+  
+      if (photoCount >= 3) {
+        await updateWorkspaceMediaStatus(req.params.id, 'complete');
+      }
+  
+      return res.status(201).json({
+        status: true,
+        message: 'Photo uploaded successfully',
+        data: photo,
+        media_status: photoCount >= 3 ? 'complete' : 'incomplete',
+        photos_uploaded: photoCount,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
         status: false,
-        message: 'No image file provided',
+        message: 'Failed to upload photo',
       });
     }
-
-    const uploadResult = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder: 'spaceshare/workspaces' },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        }
-      );
-      stream.end(req.file.buffer);
-    });
-
-    const photo = await addWorkspacePhoto(
-      req.params.id,
-      uploadResult.secure_url,
-      uploadResult.public_id
-    );
-
-    return res.status(201).json({
-      status: true,
-      message: 'Photo uploaded successfully',
-      data: photo,
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      status: false,
-      message: 'Failed to upload photo',
-    });
   }
-}
+
+  const ADMIN_STATUS_MESSAGES = {
+    admin_approved: 'Your workspace listing has been approved and is now live.',
+    rejected: 'Your workspace listing was rejected. Please review and resubmit.',
+    suspended: 'Your workspace listing has been suspended by an administrator.',
+  };
+  
+  export async function handleUpdateWorkspaceStatus(req, res) {
+    try {
+      const { status } = req.body;
+      const allowedStatuses = Object.keys(ADMIN_STATUS_MESSAGES);
+  
+      if (!status || !allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          status: false,
+          message: `status must be one of: ${allowedStatuses.join(', ')}`,
+        });
+      }
+  
+      const workspace = await updateWorkspaceStatusByAdmin(req.params.id, status);
+  
+      if (!workspace) {
+        return res.status(404).json({
+          status: false,
+          message: 'Workspace not found',
+        });
+      }
+  
+      const hostUserId = await getWorkspaceHostUserId(req.params.id);
+  
+      if (hostUserId) {
+        // TODO: swap for Emmanuella's notifications/service.js once it exists
+        await notifyHost(
+          hostUserId,
+          'Workspace status updated',
+          `${workspace.title}: ${ADMIN_STATUS_MESSAGES[status]}`
+        );
+      }
+  
+      return res.status(200).json({
+        status: true,
+        message: 'Workspace status updated successfully',
+        data: workspace,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        status: false,
+        message: 'Failed to update workspace status',
+      });
+    }
+  }
