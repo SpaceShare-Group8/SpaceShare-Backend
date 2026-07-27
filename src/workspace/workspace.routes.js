@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { upload } from './workspace.upload.js';
+import { protect, requireVerifiedHost } from '../common/middleware/auth.middleware.js';
 import {
   handleCreateWorkspace,
   handleGetWorkspaceById,
@@ -11,7 +12,7 @@ import {
 
 const router = Router();
 
-router.post('/', handleCreateWorkspace);
+router.post('/', protect, requireVerifiedHost, handleCreateWorkspace);
 router.get('/:id', handleGetWorkspaceById);
 router.get('/', handleListWorkspaces);
 router.put('/:id', handleUpdateWorkspace);
