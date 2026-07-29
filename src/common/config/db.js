@@ -5,33 +5,30 @@ dotenv.config();
 
 const { Pool } = pg;
 
+// Detect if connecting to localhost vs remote hosted database
+const isLocalhost =
+  process.env.DATABASE_URL?.includes("localhost") ||
+  process.env.DATABASE_URL?.includes("127.0.0.1");
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? {
-          rejectUnauthorized: false,
-        }
-      : false,
+  // Use SSL for remote DBs (Render) even during local dev, disable for local Postgres
+  ssl: isLocalhost ? false : { rejectUnauthorized: false },
 });
 
-// Test database connection
+pool.on("error", (err) => {
+  console.error("Unexpected PostgreSQL pool error:", err.message);
+});
+
 (async () => {
   try {
     const client = await pool.connect();
-
+    await client.query("SELECT NOW()");
     console.log("✅ PostgreSQL connected successfully.");
-
     client.release();
   } catch (error) {
-    console.error("❌ Failed to connect to PostgreSQL.");
+    console.error("❌ Failed to connect to PostgreSQL:");
     console.error(error.message);
-
-    // Exit in production if the DB is unavailable
-    if (process.env.NODE_ENV === "production") {
-      process.exit(1);
-    }
   }
 })();
 

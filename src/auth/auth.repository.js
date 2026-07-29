@@ -1,31 +1,28 @@
 import pool from "../common/config/db.js";
 
 /**
- * Find a user by email.
- *
- * @param {string} email
- * @returns {Promise<Object|null>}
+ * Find user by email.
  */
 export const findUserByEmail = async (email) => {
+  if (!email) return null;
+
   const query = `
     SELECT *
     FROM users
-    WHERE email = $1
+    WHERE LOWER(email) = LOWER($1)
     LIMIT 1;
   `;
 
-  const { rows } = await pool.query(query, [email]);
-
+  const { rows } = await pool.query(query, [email.toLowerCase()]);
   return rows[0] || null;
 };
 
 /**
- * Find a user by phone number.
- *
- * @param {string} phone
- * @returns {Promise<Object|null>}
+ * Find user by phone number.
  */
 export const findUserByPhone = async (phone) => {
+  if (!phone) return null;
+
   const query = `
     SELECT *
     FROM users
@@ -34,41 +31,43 @@ export const findUserByPhone = async (phone) => {
   `;
 
   const { rows } = await pool.query(query, [phone]);
-
   return rows[0] || null;
 };
 
 /**
- * Find a user by ID.
- *
- * @param {string} id
- * @returns {Promise<Object|null>}
+ * Find user by ID.
  */
 export const findUserById = async (id) => {
+  if (!id) return null;
+
   const query = `
-    SELECT *
+    SELECT
+      id,
+      full_name,
+      email,
+      phone,
+      role,
+      is_verified,
+      created_at,
+      updated_at
     FROM users
     WHERE id = $1
     LIMIT 1;
   `;
 
   const { rows } = await pool.query(query, [id]);
-
   return rows[0] || null;
 };
 
 /**
  * Create a new user.
- *
- * @param {Object} user
- * @returns {Promise<Object>}
  */
 export const createUser = async ({
   full_name,
   email,
   phone,
   password_hash,
-  role,
+  role = "seeker",
 }) => {
   const query = `
     INSERT INTO users (
@@ -92,7 +91,7 @@ export const createUser = async ({
 
   const values = [
     full_name,
-    email || null,
+    email ? email.toLowerCase() : null,
     phone || null,
     password_hash,
     role,
@@ -104,36 +103,32 @@ export const createUser = async ({
 };
 
 /**
- * Find a user using either email or phone.
- *
- * @param {Object} credentials
- * @returns {Promise<Object|null>}
+ * Find user by email or phone.
  */
-export const findUserByEmailOrPhone = async ({
-  email,
-  phone,
-}) => {
-  let query = "";
-  let values = [];
+export const findUserByEmailOrPhone = async ({ email, phone }) => {
+  if (!email && !phone) return null;
+
+  let query;
+  let values;
 
   if (email) {
     query = `
       SELECT *
       FROM users
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER($1)
       LIMIT 1;
     `;
-    values = [email];
-  } else if (phone) {
+
+    values = [email.toLowerCase()];
+  } else {
     query = `
       SELECT *
       FROM users
       WHERE phone = $1
       LIMIT 1;
     `;
+
     values = [phone];
-  } else {
-    return null;
   }
 
   const { rows } = await pool.query(query, values);
@@ -142,19 +137,23 @@ export const findUserByEmailOrPhone = async ({
 };
 
 /**
- * Mark a user as verified.
- *
- * @param {string} id
- * @returns {Promise<Object|null>}
+ * Verify user account.
  */
 export const verifyUser = async (id) => {
+  if (!id) return null;
+
   const query = `
     UPDATE users
     SET
       is_verified = TRUE,
       updated_at = NOW()
     WHERE id = $1
-    RETURNING *;
+    RETURNING
+      id,
+      full_name,
+      email,
+      is_verified,
+      updated_at;
   `;
 
   const { rows } = await pool.query(query, [id]);
@@ -163,29 +162,82 @@ export const verifyUser = async (id) => {
 };
 
 /**
- * Update a user's password.
- *
- * @param {string} id
- * @param {string} password_hash
- * @returns {Promise<Object|null>}
+ * Update password.
  */
-export const updatePassword = async (
-  id,
-  password_hash
-) => {
+export const updatePassword = async (id, password_hash) => {
+  if (!id || !password_hash) return null;
+
   const query = `
     UPDATE users
     SET
       password_hash = $1,
       updated_at = NOW()
     WHERE id = $2
+    RETURNING
+      id,
+      email,
+      updated_at;
+  `;
+
+  const { rows } = await pool.query(query, [password_hash, id]);
+
+  return rows[0] || null;
+};
+
+/**
+ * Find user for password reset.
+ */
+export const findUserForPasswordReset = async (email) => {
+  if (!email) return null;
+
+  const query = `
+    SELECT
+      id,
+      full_name,
+      email
+    FROM users
+    WHERE LOWER(email) = LOWER($1)
+    LIMIT 1;
+  `;
+
+  const { rows } = await pool.query(query, [email.toLowerCase()]);
+
+  return rows[0] || null;
+};
+
+/**
+ * Find host profile.
+ */
+export const findHostProfileByUserId = async (userId) => {
+  if (!userId) return null;
+
+  const query = `
+    SELECT *
+    FROM host_profiles
+    WHERE user_id = $1
+    LIMIT 1;
+  `;
+
+  const { rows } = await pool.query(query, [userId]);
+
+  return rows[0] || null;
+};
+
+/**
+ * Create host profile.
+ */
+export const createHostProfile = async (userId) => {
+  if (!userId) {
+    throw new Error("userId is required to create a host profile.");
+  }
+
+  const query = `
+    INSERT INTO host_profiles (user_id)
+    VALUES ($1)
     RETURNING *;
   `;
 
-  const { rows } = await pool.query(query, [
-    password_hash,
-    id,
-  ]);
+  const { rows } = await pool.query(query, [userId]);
 
-  return rows[0] || null;
+  return rows[0];
 };

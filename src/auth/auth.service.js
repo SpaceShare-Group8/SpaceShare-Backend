@@ -1,23 +1,15 @@
-import {
-  findUserByEmail,
-  findUserByPhone,
-  findUserById,
-  createUser,
-} from "./auth.repository.js";
-
-import {
-  hashPassword,
-  comparePassword,
-} from "../common/utils/password.js";
-
+import * as authRepository from "./auth.repository.js";
+import { hashPassword, comparePassword } from "../common/utils/password.js";
 import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  generatePasswordResetToken,
+  verifyPasswordResetToken,
 } from "../common/utils/jwt.js";
 
 /**
- * Register a new user
+ * Register a new user.
  */
 export const register = async (userData) => {
   const {
@@ -28,30 +20,10 @@ export const register = async (userData) => {
     role = "seeker",
   } = userData;
 
-  // Ensure either email or phone is provided
   if (!email && !phone) {
     throw new Error("Email or phone number is required.");
   }
 
-  // Check email uniqueness
-  if (email) {
-    const existingEmail = await findUserByEmail(email);
-
-    if (existingEmail) {
-      throw new Error("Email already exists.");
-    }
-  }
-
-  // Check phone uniqueness
-  if (phone) {
-    const existingPhone = await findUserByPhone(phone);
-
-    if (existingPhone) {
-      throw new Error("Phone number already exists.");
-    }
-  }
-
-  // Validate role
   const allowedRoles = [
     "seeker",
     "host",
@@ -63,11 +35,25 @@ export const register = async (userData) => {
     throw new Error("Invalid user role.");
   }
 
-  // Hash password
+  if (email) {
+    const existingEmail = await authRepository.findUserByEmail(email);
+
+    if (existingEmail) {
+      throw new Error("Email already registered.");
+    }
+  }
+
+  if (phone) {
+    const existingPhone = await authRepository.findUserByPhone(phone);
+
+    if (existingPhone) {
+      throw new Error("Phone number already registered.");
+    }
+  }
+
   const password_hash = await hashPassword(password);
 
-  // Create user
-  const user = await createUser({
+  const user = await authRepository.createUser({
     full_name,
     email,
     phone,
@@ -75,49 +61,26 @@ export const register = async (userData) => {
     role,
   });
 
+  // Automatically create host profile
+  if (user.role === "host") {
+    const hostProfile =
+      await authRepository.findHostProfileByUserId(user.id);
+
+    if (!hostProfile) {
+      await authRepository.createHostProfile(user.id);
+    }
+  }
+
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
   return {
     message: "User registered successfully.",
-    user,
-  };
-};
-
-/**
- * Login user
- */
-export const login = async ({ email, phone, password }) => {
-  if (!email && !phone) {
-    throw new Error("Email or phone number is required.");
-  }
-
-  let user;
-
-  if (email) {
-    user = await findUserByEmail(email);
-  } else {
-    user = await findUserByPhone(phone);
-  }
-
-  if (!user) {
-    throw new Error("Invalid credentials.");
-  }
-
-  const isPasswordValid = await comparePassword(
-    password,
-    user.password_hash
-  );
-
-  if (!isPasswordValid) {
-    throw new Error("Invalid credentials.");
-  }
-
-  const accessToken = generateAccessToken(user);
-
-  const refreshToken = generateRefreshToken(user);
-
-  return {
-    message: "Login successful.",
-    accessToken,
-    refreshToken,
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
     user: {
       id: user.id,
       full_name: user.full_name,
@@ -130,27 +93,175 @@ export const login = async ({ email, phone, password }) => {
 };
 
 /**
- * Refresh Access Token
+ * Login user.
+ */
+export const login = async ({
+  email,
+  phone,
+  password,
+}) => {
+  if (!email && !phone) {
+    throw new Error("Email or phone number is required.");
+  }
+
+  if (!password) {
+    throw new Error("Password is required.");
+  }
+
+  const user = await authRepository.findUserByEmailOrPhone({
+    email,
+    phone,
+  });
+
+  if (!user) {
+    throw new Error("Invalid email or password.");
+  }
+
+  const isPasswordValid = await comparePassword(
+    password,
+    user.password_hash
+  );
+
+  if (!isPasswordValid) {
+    throw new Error("Invalid email or password.");
+  }
+
+  // Automatically create host profile
+  if (user.role === "host") {
+    const hostProfile =
+      await authRepository.findHostProfileByUserId(user.id);
+
+    if (!hostProfile) {
+      await authRepository.createHostProfile(user.id);
+    }
+  }
+
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  return {
+    message: "Login successful.",
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
+    user: {
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      is_verified: user.is_verified,
+    },
+  };
+};
+
+/**
+ * Refresh access token.
  */
 export const refresh = async (refreshToken) => {
   if (!refreshToken) {
     throw new Error("Refresh token is required.");
   }
 
-  const decoded = verifyRefreshToken(refreshToken);
+  let decoded;
 
-  const user = await findUserById(decoded.id);
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    throw new Error("Invalid or expired refresh token.");
+  }
+
+  const user = await authRepository.findUserById(decoded.id);
 
   if (!user) {
     throw new Error("User not found.");
   }
 
-  const accessToken = generateAccessToken(user);
-
-  const newRefreshToken = generateRefreshToken(user);
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
 
   return {
-    accessToken,
-    refreshToken: newRefreshToken,
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
+  };
+};
+
+/**
+ * Forgot Password.
+ */
+export const forgotPassword = async (email) => {
+  if (!email) {
+    throw new Error("Email is required.");
+  }
+
+  const user =
+    await authRepository.findUserForPasswordReset(email);
+
+  // Prevent email enumeration
+  if (!user) {
+    return {
+      message:
+        "If an account exists with this email, password reset instructions have been sent.",
+    };
+  }
+
+  const resetToken = generatePasswordResetToken(user);
+
+  // Temporary until email service is integrated
+  console.log("Password Reset Token:", resetToken);
+
+  return {
+    message:
+      "If an account exists with this email, password reset instructions have been sent.",
+    resetToken:
+      process.env.NODE_ENV === "development"
+        ? resetToken
+        : undefined,
+  };
+};
+
+/**
+ * Reset Password.
+ */
+export const resetPassword = async (
+  token,
+  newPassword
+) => {
+  if (!token) {
+    throw new Error("Reset token is required.");
+  }
+
+  if (!newPassword) {
+    throw new Error("New password is required.");
+  }
+
+  let decoded;
+
+  try {
+    decoded = verifyPasswordResetToken(token);
+  } catch {
+    throw new Error("Invalid or expired reset token.");
+  }
+
+  const user = await authRepository.findUserById(decoded.id);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const password_hash = await hashPassword(newPassword);
+
+  await authRepository.updatePassword(
+    user.id,
+    password_hash
+  );
+
+  return {
+    message: "Password reset successfully.",
   };
 };

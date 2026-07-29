@@ -9,7 +9,6 @@
 -- );
 
 
-#######################################################
 
 -- Migration: 013_create_favorites
 -- Table: Favorites
