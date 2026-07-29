@@ -68,8 +68,9 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
         );
 
         const currentSpend = parseFloat(spendRes.rows[0].total_spent);
+        const numericTotalAmount = parseFloat(totalAmount);
 
-        if (currentSpend + totalAmount > budgetAmount) {
+        if (currentSpend + numericTotalAmount > budgetAmount) {
           throw new Error('Corporate budget limit exceeded. Booking cannot be processed.');
         }
       }
@@ -260,18 +261,20 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     // 4. Code Verification Check
     if (booking.checkin_code !== checkinCode.toString().trim()) {
       const newAttempts = (booking.failed_checkin_attempts || 0) + 1;
+      
       await client.query(
         `UPDATE bookings SET failed_checkin_attempts = $1 WHERE id = $2`,
         [newAttempts, bookingId]
       );
 
-      await client.query('COMMIT');
+      await client.query('COMMIT'); // Persist failed attempt count
 
-      if (newAttempts >= 3) {
-        throw new Error('Check-in locked due to 3 failed attempts. Please contact Support.');
-      }
+      const remainingAttempts = 3 - newAttempts;
+      const errorMessage = remainingAttempts <= 0
+        ? 'Check-in locked due to 3 failed attempts. Please contact Support.'
+        : `Invalid 6-digit check-in code. ${remainingAttempts} attempt(s) remaining.`;
 
-      throw new Error(`Invalid 6-digit check-in code. ${3 - newAttempts} attempt(s) remaining.`);
+      throw new Error(errorMessage);
     }
 
     // 5. Successful Check-in Transition (Confirmed -> In Progress)
@@ -293,7 +296,12 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     await client.query('COMMIT');
     return updatedRes.rows[0];
   } catch (error) {
-    await client.query('ROLLBACK');
+    // Only rollback if the transaction block is still active
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      // Transaction was already committed in the failed-attempt branch
+    }
     throw error;
   } finally {
     client.release();
