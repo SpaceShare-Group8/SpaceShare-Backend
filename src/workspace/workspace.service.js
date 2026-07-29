@@ -121,3 +121,48 @@ export async function addWorkspacePhoto(workspace_id, photo_url, cloudinary_publ
 
     return result.rows[0];
 }
+
+export async function countWorkspacePhotos(workspace_id) {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM workspace_photos WHERE workspace_id = $1`,
+      [workspace_id]
+    );
+  
+    return result.rows[0].count;
+  }
+  
+  export async function updateWorkspaceMediaStatus(workspace_id, media_status) {
+    await pool.query(
+      `UPDATE workspaces SET media_status = $1, updated_at = NOW() WHERE id = $2`,
+      [media_status, workspace_id]
+    );
+  }
+
+  export async function updateWorkspaceStatusByAdmin(id, status) {
+    const result = await pool.query(
+      `UPDATE workspaces SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [status, id]
+    );
+  
+    return result.rows[0] || null;
+  }
+  
+  export async function getWorkspaceHostUserId(workspace_id) {
+    const result = await pool.query(
+      `SELECT hp.user_id
+       FROM workspaces w
+       JOIN host_profiles hp ON hp.id = w.host_id
+       WHERE w.id = $1`,
+      [workspace_id]
+    );
+  
+    return result.rows[0]?.user_id || null;
+  }
+  
+  export async function notifyHost(user_id, title, message) {
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, message, type)
+       VALUES ($1, $2, $3, 'system')`,
+      [user_id, title, message]
+    );
+  }
