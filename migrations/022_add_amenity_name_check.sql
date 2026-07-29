@@ -14,4 +14,4 @@ ADD CONSTRAINT workspace_amenities_amenity_name_check
 CHECK (amenity_name IN (
     'wifi', 'parking', 'air_conditioning', 'power_backup',
     'printer', 'whiteboard', 'kitchen_access', 'security', 'standing_desk'
-));
+)) NOT VALID;
