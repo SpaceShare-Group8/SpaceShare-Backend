@@ -6,6 +6,7 @@ import cors from "cors";
 /* Route imports */
 import authRoutes from "./auth/auth.routes.js";
 import workspaceRoutes from "./workspace/workspace.routes.js";
+import bookingRoutes from "./booking/booking.routes.js";
 import corporateRoutes from "./corporate/corporate.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
 
@@ -22,6 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 /* Express route mounting */
 app.use("/api/auth", authRoutes);
 app.use("/api/workspaces", workspaceRoutes);
+app.use("/api/bookings", bookingRoutes);
 app.use("/api/corporate", corporateRoutes);
 app.use("/api/admin", adminRoutes);
 
@@ -62,7 +64,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
-  console.log(`🚀 SpaceShare API running on http://localhost:${PORT}`);;
+  console.log(`🚀 SpaceShare API running on http://localhost:${PORT}`);
 });
 
 /* Handle unhandled promise rejections */
