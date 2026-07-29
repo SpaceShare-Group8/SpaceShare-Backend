@@ -13,10 +13,13 @@
  * 
  */
 
-const BASE_URL = 'http://localhost:5000';
-const SEEKER_ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijc3ZGFmYTgxLTVkMzctNDFlZC1iNTQwLTFmNzJmMDZkNWUyZSIsImVtYWlsIjoidGVzdHNlZWtlckBleGFtcGxlMS5jb20iLCJyb2xlcyI6WyJzZWVrZXIiXSwiaWF0IjoxNzg1MzMxNzA5LCJleHAiOjE3ODUzMzI2MDl9.jNoBBT29R5X2l1PoVf_GFjnlOYj5Uiu58gFZ315s7ck';
-const WORKSPACE_ID = '32e38db9-50f7-4ffa-97c5-b9d2acc56a80';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+const SEEKER_ACCESS_TOKEN = process.env.SEEKER_ACCESS_TOKEN;
+const WORKSPACE_ID = process.env.WORKSPACE_ID;
 
+if (!SEEKER_ACCESS_TOKEN || !WORKSPACE_ID) {
+  throw new Error('Set SEEKER_ACCESS_TOKEN and WORKSPACE_ID env vars before running this script.');
+}
 // Use a slot that hasn't been booked yet — change if this one is taken.
 const START_TIME = '2026-08-03T14:00:00Z';
 const END_TIME = '2026-08-03T16:00:00Z';
