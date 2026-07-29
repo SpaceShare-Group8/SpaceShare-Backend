@@ -80,7 +80,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       SELECT id FROM bookings
       WHERE workspace_id = $1
         AND status IN ('confirmed', 'in_progress', 'pending')
-        AND (start_time, end_time) OVERLAPS ($2::timestamp, $3::timestamp)
+        AND (start_time, end_time) OVERLAPS ($2::timestamptz, $3::timestamptz)
       FOR UPDATE;
     `;
     const overlapRes = await client.query(overlapQuery, [workspaceId, startTime, endTime]);
