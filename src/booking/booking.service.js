@@ -24,14 +24,14 @@ export const generateCheckinCode = () => {
  * PRD 10.10: Blocks corporate bookings if budget is exceeded.
  */
 export const createBooking = async ({ seekerId, workspaceId, startTime, endTime, corporateAccountId = null, totalAmount }) => {
-  const client = await db.getClient();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
 
     // 1. Lock workspace row to prevent concurrent race conditions
     const workspaceRes = await client.query(
-      `SELECT id, host_id, status FROM "Workspaces" WHERE id = $1 FOR UPDATE`,
+      `SELECT id, host_id, status FROM workspaces WHERE id = $1 FOR UPDATE`,
       [workspaceId]
     );
 
@@ -41,7 +41,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     const workspace = workspaceRes.rows[0];
 
-    if (workspace.status !== 'approved' && workspace.status !== 'live') {
+    if (workspace.status !== 'published' && workspace.status !== 'admin_approved') {
       throw new Error('Workspace is not currently active or available for booking.');
     }
 
@@ -53,7 +53,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
     // 3. Corporate Budget Enforcement (PRD Section 10.10 & 11.14)
     if (corporateAccountId) {
       const corporateRes = await client.query(
-        `SELECT budget_amount FROM "CorporateAccounts" WHERE id = $1`,
+        `SELECT budget_amount FROM corporate_accounts WHERE id = $1`,
         [corporateAccountId]
       );
 
@@ -62,7 +62,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
         const spendRes = await client.query(
           `SELECT COALESCE(SUM(total_amount), 0) AS total_spent 
-           FROM "Bookings" 
+           FROM bookings 
            WHERE corporate_account_id = $1 AND status IN ('confirmed', 'in_progress', 'completed')`,
           [corporateAccountId]
         );
@@ -77,7 +77,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     // 4. Overlap Check using PostgreSQL Range Overlap Operators
     const overlapQuery = `
-      SELECT id FROM "Bookings"
+      SELECT id FROM bookings
       WHERE workspace_id = $1
         AND status IN ('confirmed', 'in_progress', 'pending')
         AND (start_time, end_time) OVERLAPS ($2::timestamp, $3::timestamp)
@@ -98,7 +98,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     // 6. Insert Booking Record
     const insertQuery = `
-      INSERT INTO "Bookings" (
+      INSERT INTO bookings (
         workspace_id, seeker_id, corporate_account_id, start_time, end_time, 
         mode, status, checkin_code, total_amount, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
@@ -133,7 +133,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
  * Generates a check-in code upon host confirmation. (PRD 10.5 & 11.7)
  */
 export const acceptBookingRequest = async (bookingId, hostId) => {
-  const client = await db.getClient();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
@@ -141,8 +141,8 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
     // Check Host Authorization
     const bookingQuery = `
       SELECT b.id, b.status, w.host_id 
-      FROM "Bookings" b
-      JOIN "Workspaces" w ON b.workspace_id = w.id
+      FROM bookings b
+      JOIN workspaces w ON b.workspace_id = w.id
       WHERE b.id = $1 FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
@@ -165,7 +165,7 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
     const checkinCode = generateCheckinCode();
 
     const updateQuery = `
-      UPDATE "Bookings"
+      UPDATE bookings
       SET status = 'confirmed', checkin_code = $1, updated_at = NOW()
       WHERE id = $2
       RETURNING *;
@@ -188,8 +188,8 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
 export const declineBookingRequest = async (bookingId, hostId) => {
   const bookingQuery = `
     SELECT b.id, b.status, w.host_id 
-    FROM "Bookings" b
-    JOIN "Workspaces" w ON b.workspace_id = w.id
+    FROM bookings b
+    JOIN workspaces w ON b.workspace_id = w.id
     WHERE b.id = $1;
   `;
   const bookingRes = await db.query(bookingQuery, [bookingId]);
@@ -209,7 +209,7 @@ export const declineBookingRequest = async (bookingId, hostId) => {
   }
 
   const updateQuery = `
-    UPDATE "Bookings"
+    UPDATE bookings
     SET status = 'declined', updated_at = NOW()
     WHERE id = $1
     RETURNING *;
@@ -223,15 +223,15 @@ export const declineBookingRequest = async (bookingId, hostId) => {
  * Includes rate limiting protection (PRD 10.7 & 11.11).
  */
 export const processCheckIn = async (bookingId, checkinCode, hostId) => {
-  const client = await db.getClient();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
 
     const bookingQuery = `
       SELECT b.id, b.status, b.checkin_code, b.failed_checkin_attempts, w.host_id 
-      FROM "Bookings" b
-      JOIN "Workspaces" w ON b.workspace_id = w.id
+      FROM bookings b
+      JOIN workspaces w ON b.workspace_id = w.id
       WHERE b.id = $1 FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
@@ -261,7 +261,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     if (booking.checkin_code !== checkinCode.toString().trim()) {
       const newAttempts = (booking.failed_checkin_attempts || 0) + 1;
       await client.query(
-        `UPDATE "Bookings" SET failed_checkin_attempts = $1 WHERE id = $2`,
+        `UPDATE bookings SET failed_checkin_attempts = $1 WHERE id = $2`,
         [newAttempts, bookingId]
       );
 
@@ -276,7 +276,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
 
     // 5. Successful Check-in Transition (Confirmed -> In Progress)
     const updateBooking = `
-      UPDATE "Bookings"
+      UPDATE bookings
       SET status = 'in_progress', updated_at = NOW()
       WHERE id = $1
       RETURNING *;
@@ -285,7 +285,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
 
     // Record check-in audit event (PRD 14: BookingCheckIns table)
     const auditQuery = `
-      INSERT INTO "BookingCheckIns" (booking_id, checked_in_at, method)
+      INSERT INTO booking_checkins (booking_id, checked_in_at, method)
       VALUES ($1, NOW(), '6-digit-code');
     `;
     await client.query(auditQuery, [bookingId]);
@@ -311,8 +311,8 @@ export const verifyAndCheckIn = processCheckIn;
 export const getBookingById = async (bookingId, userId, role) => {
   const query = `
     SELECT b.*, w.title AS workspace_title, w.host_id
-    FROM "Bookings" b
-    JOIN "Workspaces" w ON b.workspace_id = w.id
+    FROM bookings b
+    JOIN workspaces w ON b.workspace_id = w.id
     WHERE b.id = $1;
   `;
   const result = await db.query(query, [bookingId]);
@@ -336,15 +336,15 @@ export const getUserBookings = async ({ userId, role = 'seeker', status, page = 
 
   if (role === 'host') {
     baseQuery = `
-      FROM "Bookings" b
-      JOIN "Workspaces" w ON b.workspace_id = w.id
-      JOIN "Users" u ON b.seeker_id = u.id
+      FROM bookings b
+      JOIN workspaces w ON b.workspace_id = w.id
+      JOIN users u ON b.seeker_id = u.id
       WHERE w.host_id = $1
     `;
   } else {
     baseQuery = `
-      FROM "Bookings" b
-      JOIN "Workspaces" w ON b.workspace_id = w.id
+      FROM bookings b
+      JOIN workspaces w ON b.workspace_id = w.id
       WHERE b.seeker_id = $1
     `;
   }
@@ -385,8 +385,8 @@ export const getUserBookings = async ({ userId, role = 'seeker', status, page = 
 export const cancelBooking = async (bookingId, userId, reason) => {
   const bookingQuery = `
     SELECT b.id, b.status, b.seeker_id, w.host_id 
-    FROM "Bookings" b
-    JOIN "Workspaces" w ON b.workspace_id = w.id
+    FROM bookings b
+    JOIN workspaces w ON b.workspace_id = w.id
     WHERE b.id = $1;
   `;
   const bookingRes = await db.query(bookingQuery, [bookingId]);
@@ -406,7 +406,7 @@ export const cancelBooking = async (bookingId, userId, reason) => {
   }
 
   const updateQuery = `
-    UPDATE "Bookings"
+    UPDATE bookings
     SET status = 'cancelled', updated_at = NOW()
     WHERE id = $1
     RETURNING *;
