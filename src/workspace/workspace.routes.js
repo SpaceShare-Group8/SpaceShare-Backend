@@ -10,6 +10,7 @@ import {
   handleUploadWorkspacePhoto,
   handleUpdateWorkspaceStatus
 } from './workspace.controller.js';
+import availabilityRoutes from "../booking/availability/availability.routes.js";
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.put('/:id', handleUpdateWorkspace);
 router.delete('/:id', handleDeleteWorkspace);
 router.post('/:id/photos', upload.single('photo'), handleUploadWorkspacePhoto);
 router.patch('/:id/status', protect, authorize('admin', 'platform_admin'), handleUpdateWorkspaceStatus);
+router.use("/", availabilityRoutes);
 
 export default router;
