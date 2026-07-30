@@ -1,14 +1,14 @@
 /**
  * SpaceShare - Booking Service Implementation
  * Handles business logic for checking overlaps with row-level locks (PostgreSQL),
- * generating secure 6-digit check-in codes, host authorization checks, 
+ * generating secure 6-digit check-in codes, host authorization checks,
  * booking requests, and code verification check-ins.
- * 
+ *
  * Aligns strictly with SpaceShare Master PRD (Group 8, Cohort 7 Capstone Project)
  */
 
-import crypto from 'crypto';
-import db from '../common/config/db.js'; // Database pool connection
+import crypto from "crypto";
+import db from "../common/config/db.js"; // Database pool connection
 
 /**
  * Generate a secure 6-digit numeric check-in code
@@ -23,38 +23,67 @@ export const generateCheckinCode = () => {
  * PRD 11.7: Double-booking prevented at DB level via transactional locks.
  * PRD 10.10: Blocks corporate bookings if budget is exceeded.
  */
+<<<<<<< Updated upstream
 export const createBooking = async ({ seekerId, workspaceId, startTime, endTime, corporateAccountId = null, totalAmount }) => {
   const client = await db.connect();
+=======
+export const createBooking = async ({
+  seekerId,
+  workspaceId,
+  startTime,
+  endTime,
+  corporateAccountId = null,
+  totalAmount,
+}) => {
+  const client = await db.getClient();
+>>>>>>> Stashed changes
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // 1. Lock workspace row to prevent concurrent race conditions
     const workspaceRes = await client.query(
+<<<<<<< Updated upstream
       `SELECT id, host_id, status FROM workspaces WHERE id = $1 FOR UPDATE`,
       [workspaceId]
+=======
+      `SELECT id, host_id, status FROM "Workspaces" WHERE id = $1 FOR UPDATE`,
+      [workspaceId],
+>>>>>>> Stashed changes
     );
 
     if (workspaceRes.rows.length === 0) {
-      throw new Error('Workspace not found.');
+      throw new Error("Workspace not found.");
     }
 
     const workspace = workspaceRes.rows[0];
 
+<<<<<<< Updated upstream
     if (workspace.status !== 'published' && workspace.status !== 'admin_approved') {
       throw new Error('Workspace is not currently active or available for booking.');
+=======
+    if (workspace.status !== "approved" && workspace.status !== "live") {
+      throw new Error(
+        "Workspace is not currently active or available for booking.",
+      );
+>>>>>>> Stashed changes
     }
 
     // 2. Prevent Host from booking their own workspace
     if (workspace.host_id === seekerId) {
-      throw new Error('Hosts cannot book their own workspace.');
+      throw new Error("Hosts cannot book their own workspace.");
     }
 
     // 3. Corporate Budget Enforcement (PRD Section 10.10 & 11.14)
     if (corporateAccountId) {
       const corporateRes = await client.query(
+<<<<<<< Updated upstream
         `SELECT budget_amount FROM corporate_accounts WHERE id = $1`,
         [corporateAccountId]
+=======
+        `SELECT budget_amount FROM "CorporateAccounts" WHERE id = $1`,
+        [corporateAccountId],
+>>>>>>> Stashed changes
       );
 
       if (corporateRes.rows.length > 0) {
@@ -64,14 +93,21 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
           `SELECT COALESCE(SUM(total_amount), 0) AS total_spent 
            FROM bookings 
            WHERE corporate_account_id = $1 AND status IN ('confirmed', 'in_progress', 'completed')`,
-          [corporateAccountId]
+          [corporateAccountId],
         );
 
         const currentSpend = parseFloat(spendRes.rows[0].total_spent);
         const numericTotalAmount = parseFloat(totalAmount);
 
+<<<<<<< Updated upstream
         if (currentSpend + numericTotalAmount > budgetAmount) {
           throw new Error('Corporate budget limit exceeded. Booking cannot be processed.');
+=======
+        if (currentSpend + totalAmount > budgetAmount) {
+          throw new Error(
+            "Corporate budget limit exceeded. Booking cannot be processed.",
+          );
+>>>>>>> Stashed changes
         }
       }
     }
@@ -84,18 +120,23 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
         AND (start_time, end_time) OVERLAPS ($2::timestamptz, $3::timestamptz)
       FOR UPDATE;
     `;
-    const overlapRes = await client.query(overlapQuery, [workspaceId, startTime, endTime]);
+    const overlapRes = await client.query(overlapQuery, [
+      workspaceId,
+      startTime,
+      endTime,
+    ]);
 
     if (overlapRes.rows.length > 0) {
-      throw new Error('Selected time slot is no longer available.');
+      throw new Error("Selected time slot is no longer available.");
     }
 
     // 5. Determine booking mode/status and Check-in Code Generation
-    const bookingMode = 'instant'; 
-    const initialStatus = bookingMode === 'instant' ? 'confirmed' : 'pending';
-    
+    const bookingMode = "instant";
+    const initialStatus = bookingMode === "instant" ? "confirmed" : "pending";
+
     // PRD 10.5 & 11.11: 6-digit code for instant/approved bookings
-    const checkinCode = initialStatus === 'confirmed' ? generateCheckinCode() : null;
+    const checkinCode =
+      initialStatus === "confirmed" ? generateCheckinCode() : null;
 
     // 6. Insert Booking Record
     const insertQuery = `
@@ -114,15 +155,15 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       bookingMode,
       initialStatus,
       checkinCode,
-      totalAmount
+      totalAmount,
     ];
 
     const newBookingRes = await client.query(insertQuery, insertValues);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return newBookingRes.rows[0];
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -137,7 +178,7 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
   const client = await db.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Check Host Authorization
     const bookingQuery = `
@@ -149,18 +190,20 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
     const bookingRes = await client.query(bookingQuery, [bookingId]);
 
     if (bookingRes.rows.length === 0) {
-      throw new Error('Booking not found.');
+      throw new Error("Booking not found.");
     }
 
     const booking = bookingRes.rows[0];
 
     // PRD 9 & 11.2: Host Authorization Check
     if (booking.host_id !== hostId) {
-      throw new Error('Unauthorized: You are not the host of this workspace.');
+      throw new Error("Unauthorized: You are not the host of this workspace.");
     }
 
-    if (booking.status !== 'pending') {
-      throw new Error(`Booking cannot be accepted because it is currently in '${booking.status}' status.`);
+    if (booking.status !== "pending") {
+      throw new Error(
+        `Booking cannot be accepted because it is currently in '${booking.status}' status.`,
+      );
     }
 
     const checkinCode = generateCheckinCode();
@@ -171,12 +214,15 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
       WHERE id = $2
       RETURNING *;
     `;
-    const updatedRes = await client.query(updateQuery, [checkinCode, bookingId]);
+    const updatedRes = await client.query(updateQuery, [
+      checkinCode,
+      bookingId,
+    ]);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return updatedRes.rows[0];
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -196,17 +242,19 @@ export const declineBookingRequest = async (bookingId, hostId) => {
   const bookingRes = await db.query(bookingQuery, [bookingId]);
 
   if (bookingRes.rows.length === 0) {
-    throw new Error('Booking not found.');
+    throw new Error("Booking not found.");
   }
 
   const booking = bookingRes.rows[0];
 
   if (booking.host_id !== hostId) {
-    throw new Error('Unauthorized: You are not the host of this workspace.');
+    throw new Error("Unauthorized: You are not the host of this workspace.");
   }
 
-  if (booking.status !== 'pending') {
-    throw new Error(`Booking cannot be declined because it is in '${booking.status}' status.`);
+  if (booking.status !== "pending") {
+    throw new Error(
+      `Booking cannot be declined because it is in '${booking.status}' status.`,
+    );
   }
 
   const updateQuery = `
@@ -227,7 +275,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
   const client = await db.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     const bookingQuery = `
       SELECT b.id, b.status, b.checkin_code, b.failed_checkin_attempts, w.host_id 
@@ -238,24 +286,30 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     const bookingRes = await client.query(bookingQuery, [bookingId]);
 
     if (bookingRes.rows.length === 0) {
-      throw new Error('Booking not found.');
+      throw new Error("Booking not found.");
     }
 
     const booking = bookingRes.rows[0];
 
     // 1. Authorization Verification
     if (booking.host_id !== hostId) {
-      throw new Error('Unauthorized: You are not authorized to check in guests for this listing.');
+      throw new Error(
+        "Unauthorized: You are not authorized to check in guests for this listing.",
+      );
     }
 
     // 2. Lockout Check (PRD 11.11 - Locked after 3 incorrect tries)
     if (booking.failed_checkin_attempts >= 3) {
-      throw new Error('Check-in locked due to 3 failed attempts. Please contact Support.');
+      throw new Error(
+        "Check-in locked due to 3 failed attempts. Please contact Support.",
+      );
     }
 
     // 3. Status Verification
-    if (booking.status !== 'confirmed') {
-      throw new Error(`Invalid session state: Booking status is '${booking.status}'. Must be 'confirmed'.`);
+    if (booking.status !== "confirmed") {
+      throw new Error(
+        `Invalid session state: Booking status is '${booking.status}'. Must be 'confirmed'.`,
+      );
     }
 
     // 4. Code Verification Check
@@ -263,6 +317,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
       const newAttempts = (booking.failed_checkin_attempts || 0) + 1;
       
       await client.query(
+<<<<<<< Updated upstream
         `UPDATE bookings SET failed_checkin_attempts = $1 WHERE id = $2`,
         [newAttempts, bookingId]
       );
@@ -275,6 +330,23 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
         : `Invalid 6-digit check-in code. ${remainingAttempts} attempt(s) remaining.`;
 
       throw new Error(errorMessage);
+=======
+        `UPDATE "Bookings" SET failed_checkin_attempts = $1 WHERE id = $2`,
+        [newAttempts, bookingId],
+      );
+
+      await client.query("COMMIT");
+
+      if (newAttempts >= 3) {
+        throw new Error(
+          "Check-in locked due to 3 failed attempts. Please contact Support.",
+        );
+      }
+
+      throw new Error(
+        `Invalid 6-digit check-in code. ${3 - newAttempts} attempt(s) remaining.`,
+      );
+>>>>>>> Stashed changes
     }
 
     // 5. Successful Check-in Transition (Confirmed -> In Progress)
@@ -293,15 +365,19 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     `;
     await client.query(auditQuery, [bookingId]);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return updatedRes.rows[0];
   } catch (error) {
+<<<<<<< Updated upstream
     // Only rollback if the transaction block is still active
     try {
       await client.query('ROLLBACK');
     } catch (rollbackErr) {
       // Transaction was already committed in the failed-attempt branch
     }
+=======
+    await client.query("ROLLBACK");
+>>>>>>> Stashed changes
     throw error;
   } finally {
     client.release();
@@ -327,8 +403,12 @@ export const getBookingById = async (bookingId, userId, role) => {
   if (result.rows.length === 0) return null;
 
   const booking = result.rows[0];
-  if (role !== 'admin' && booking.seeker_id !== userId && booking.host_id !== userId) {
-    throw new Error('Unauthorized: Access denied to this booking details.');
+  if (
+    role !== "admin" &&
+    booking.seeker_id !== userId &&
+    booking.host_id !== userId
+  ) {
+    throw new Error("Unauthorized: Access denied to this booking details.");
   }
 
   return booking;
@@ -337,12 +417,18 @@ export const getBookingById = async (bookingId, userId, role) => {
 /**
  * Fetches Seeker or Host Booking History (PRD Section 11.7a)
  */
-export const getUserBookings = async ({ userId, role = 'seeker', status, page = 1, limit = 10 }) => {
+export const getUserBookings = async ({
+  userId,
+  role = "seeker",
+  status,
+  page = 1,
+  limit = 10,
+}) => {
   const offset = (page - 1) * limit;
-  let baseQuery = '';
+  let baseQuery = "";
   const queryParams = [userId];
 
-  if (role === 'host') {
+  if (role === "host") {
     baseQuery = `
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
@@ -400,17 +486,19 @@ export const cancelBooking = async (bookingId, userId, reason) => {
   const bookingRes = await db.query(bookingQuery, [bookingId]);
 
   if (bookingRes.rows.length === 0) {
-    throw new Error('Booking not found.');
+    throw new Error("Booking not found.");
   }
 
   const booking = bookingRes.rows[0];
 
   if (booking.seeker_id !== userId && booking.host_id !== userId) {
-    throw new Error('Unauthorized to cancel this booking.');
+    throw new Error("Unauthorized to cancel this booking.");
   }
 
-  if (['completed', 'cancelled'].includes(booking.status)) {
-    throw new Error(`Booking cannot be cancelled because it is already '${booking.status}'.`);
+  if (["completed", "cancelled"].includes(booking.status)) {
+    throw new Error(
+      `Booking cannot be cancelled because it is already '${booking.status}'.`,
+    );
   }
 
   const updateQuery = `
