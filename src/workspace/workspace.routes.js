@@ -11,10 +11,12 @@ import {
   handleUpdateWorkspaceStatus
 } from './workspace.controller.js';
 import availabilityRoutes from "../booking/availability/availability.routes.js";
+import { handleSearchWorkspaces } from "./search.controller.js";
 
 const router = Router();
 
 router.post('/', protect, requireVerifiedHost, handleCreateWorkspace);
+router.get("/search", handleSearchWorkspaces);
 router.get('/:id', handleGetWorkspaceById);
 router.get('/', handleListWorkspaces);
 router.put('/:id', handleUpdateWorkspace);
