@@ -31,7 +31,10 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     // 1. Lock workspace row to prevent concurrent race conditions
     const workspaceRes = await client.query(
-      `SELECT id, host_id, status FROM workspaces WHERE id = $1 FOR UPDATE`,
+      `SELECT w.id, w.status, hp.user_id AS host_user_id
+       FROM workspaces w
+       JOIN host_profiles hp ON w.host_id = hp.id
+       WHERE w.id = $1 FOR UPDATE`,
       [workspaceId]
     );
 
@@ -46,7 +49,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
     }
 
     // 2. Prevent Host from booking their own workspace
-    if (workspace.host_id === seekerId) {
+    if (workspace.host_user_id === seekerId) {
       throw new Error('Hosts cannot book their own workspace.');
     }
 
@@ -68,9 +71,8 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
         );
 
         const currentSpend = parseFloat(spendRes.rows[0].total_spent);
-        const numericTotalAmount = parseFloat(totalAmount);
 
-        if (currentSpend + numericTotalAmount > budgetAmount) {
+        if (currentSpend + totalAmount > budgetAmount) {
           throw new Error('Corporate budget limit exceeded. Booking cannot be processed.');
         }
       }
@@ -81,7 +83,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       SELECT id FROM bookings
       WHERE workspace_id = $1
         AND status IN ('confirmed', 'in_progress', 'pending')
-        AND (start_time, end_time) OVERLAPS ($2::timestamptz, $3::timestamptz)
+        AND (start_time, end_time) OVERLAPS ($2::timestamp, $3::timestamp)
       FOR UPDATE;
     `;
     const overlapRes = await client.query(overlapQuery, [workspaceId, startTime, endTime]);
@@ -141,9 +143,10 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
 
     // Check Host Authorization
     const bookingQuery = `
-      SELECT b.id, b.status, w.host_id 
+      SELECT b.id, b.status, hp.user_id AS host_user_id
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
+      JOIN host_profiles hp ON w.host_id = hp.id
       WHERE b.id = $1 FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
@@ -155,7 +158,7 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
     const booking = bookingRes.rows[0];
 
     // PRD 9 & 11.2: Host Authorization Check
-    if (booking.host_id !== hostId) {
+    if (booking.host_user_id !== hostId) {
       throw new Error('Unauthorized: You are not the host of this workspace.');
     }
 
@@ -188,9 +191,10 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
  */
 export const declineBookingRequest = async (bookingId, hostId) => {
   const bookingQuery = `
-    SELECT b.id, b.status, w.host_id 
+    SELECT b.id, b.status, hp.user_id AS host_user_id
     FROM bookings b
     JOIN workspaces w ON b.workspace_id = w.id
+    JOIN host_profiles hp ON w.host_id = hp.id
     WHERE b.id = $1;
   `;
   const bookingRes = await db.query(bookingQuery, [bookingId]);
@@ -201,7 +205,7 @@ export const declineBookingRequest = async (bookingId, hostId) => {
 
   const booking = bookingRes.rows[0];
 
-  if (booking.host_id !== hostId) {
+  if (booking.host_user_id !== hostId) {
     throw new Error('Unauthorized: You are not the host of this workspace.');
   }
 
@@ -230,9 +234,10 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     await client.query('BEGIN');
 
     const bookingQuery = `
-      SELECT b.id, b.status, b.checkin_code, b.failed_checkin_attempts, w.host_id 
+      SELECT b.id, b.status, b.checkin_code, b.failed_checkin_attempts, hp.user_id AS host_user_id
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
+      JOIN host_profiles hp ON w.host_id = hp.id
       WHERE b.id = $1 FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
@@ -244,7 +249,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     const booking = bookingRes.rows[0];
 
     // 1. Authorization Verification
-    if (booking.host_id !== hostId) {
+    if (booking.host_user_id !== hostId) {
       throw new Error('Unauthorized: You are not authorized to check in guests for this listing.');
     }
 
@@ -261,20 +266,18 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     // 4. Code Verification Check
     if (booking.checkin_code !== checkinCode.toString().trim()) {
       const newAttempts = (booking.failed_checkin_attempts || 0) + 1;
-      
       await client.query(
         `UPDATE bookings SET failed_checkin_attempts = $1 WHERE id = $2`,
         [newAttempts, bookingId]
       );
 
-      await client.query('COMMIT'); // Persist failed attempt count
+      await client.query('COMMIT');
 
-      const remainingAttempts = 3 - newAttempts;
-      const errorMessage = remainingAttempts <= 0
-        ? 'Check-in locked due to 3 failed attempts. Please contact Support.'
-        : `Invalid 6-digit check-in code. ${remainingAttempts} attempt(s) remaining.`;
+      if (newAttempts >= 3) {
+        throw new Error('Check-in locked due to 3 failed attempts. Please contact Support.');
+      }
 
-      throw new Error(errorMessage);
+      throw new Error(`Invalid 6-digit check-in code. ${3 - newAttempts} attempt(s) remaining.`);
     }
 
     // 5. Successful Check-in Transition (Confirmed -> In Progress)
@@ -296,12 +299,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     await client.query('COMMIT');
     return updatedRes.rows[0];
   } catch (error) {
-    // Only rollback if the transaction block is still active
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackErr) {
-      // Transaction was already committed in the failed-attempt branch
-    }
+    await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
@@ -318,16 +316,17 @@ export const verifyAndCheckIn = processCheckIn;
  */
 export const getBookingById = async (bookingId, userId, role) => {
   const query = `
-    SELECT b.*, w.title AS workspace_title, w.host_id
+    SELECT b.*, w.title AS workspace_title, hp.user_id AS host_user_id
     FROM bookings b
     JOIN workspaces w ON b.workspace_id = w.id
+    JOIN host_profiles hp ON w.host_id = hp.id
     WHERE b.id = $1;
   `;
   const result = await db.query(query, [bookingId]);
   if (result.rows.length === 0) return null;
 
   const booking = result.rows[0];
-  if (role !== 'admin' && booking.seeker_id !== userId && booking.host_id !== userId) {
+  if (role !== 'admin' && booking.seeker_id !== userId && booking.host_user_id !== userId) {
     throw new Error('Unauthorized: Access denied to this booking details.');
   }
 
@@ -346,8 +345,9 @@ export const getUserBookings = async ({ userId, role = 'seeker', status, page = 
     baseQuery = `
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
+      JOIN host_profiles hp ON w.host_id = hp.id
       JOIN users u ON b.seeker_id = u.id
-      WHERE w.host_id = $1
+      WHERE hp.user_id = $1
     `;
   } else {
     baseQuery = `
@@ -392,33 +392,42 @@ export const getUserBookings = async ({ userId, role = 'seeker', status, page = 
  */
 export const cancelBooking = async (bookingId, userId, reason) => {
   const bookingQuery = `
-    SELECT b.id, b.status, b.seeker_id, w.host_id 
+    SELECT b.id, b.status, b.seeker_id, hp.user_id AS host_user_id
     FROM bookings b
     JOIN workspaces w ON b.workspace_id = w.id
+    JOIN host_profiles hp ON w.host_id = hp.id
     WHERE b.id = $1;
   `;
   const bookingRes = await db.query(bookingQuery, [bookingId]);
 
   if (bookingRes.rows.length === 0) {
-    throw new Error('Booking not found.');
+    const err = new Error('Booking not found.');
+    err.statusCode = 404;
+    throw err;
   }
 
   const booking = bookingRes.rows[0];
 
-  if (booking.seeker_id !== userId && booking.host_id !== userId) {
-    throw new Error('Unauthorized to cancel this booking.');
+  if (booking.seeker_id !== userId && booking.host_user_id !== userId) {
+    const err = new Error('Unauthorized to cancel this booking.');
+    err.statusCode = 403;
+    throw err;
   }
 
   if (['completed', 'cancelled'].includes(booking.status)) {
-    throw new Error(`Booking cannot be cancelled because it is already '${booking.status}'.`);
+    const err = new Error(`Booking cannot be cancelled because it is already '${booking.status}'.`);
+    err.statusCode = 400;
+    throw err;
   }
+
+  const cancelledBy = booking.seeker_id === userId ? 'seeker' : 'host';
 
   const updateQuery = `
     UPDATE bookings
-    SET status = 'cancelled', updated_at = NOW()
-    WHERE id = $1
+    SET status = 'cancelled', cancelled_by = $1, cancellation_reason = $2, cancelled_at = NOW(), updated_at = NOW()
+    WHERE id = $3
     RETURNING *;
   `;
-  const result = await db.query(updateQuery, [bookingId]);
+  const result = await db.query(updateQuery, [cancelledBy, reason || null, bookingId]);
   return { booking: result.rows[0], cancellationReason: reason };
 };
