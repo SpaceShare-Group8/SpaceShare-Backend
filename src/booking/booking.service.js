@@ -4,24 +4,66 @@
  * generating secure 6-digit check-in codes, host authorization checks, 
  * booking requests, and code verification check-ins.
  * 
- * Aligns strictly with SpaceShare Master PRD (Group 8, Cohort 7 Capstone Project)
+ * FIXES APPLIED:
+ * 1. Double-booking prevention with proper FOR UPDATE locks on bookings table
+ * 2. Unique check-in code generation with retry logic
+ * 3. Failed check-in attempt tracking with lockout after 3 attempts
+ * 4. Bookings start as 'pending_payment' and become 'confirmed' after payment
+ * 5. Check-in code generated ONLY after successful payment
  */
 
 import crypto from 'crypto';
-import db from '../common/config/db.js'; // Database pool connection
+import db from '../common/config/db.js';
+
+// ================================================================
+// CHECK-IN CODE GENERATION
+// ================================================================
 
 /**
- * Generate a secure 6-digit numeric check-in code
- * @returns {string} 6-digit string
+ * Generate a secure 6-digit numeric check-in code with uniqueness check
+ * @param {object} client - Database client for transaction
+ * @returns {Promise<string>} 6-digit string
  */
-export const generateCheckinCode = () => {
-  return crypto.randomInt(100000, 999999).toString();
+export const generateUniqueCheckinCode = async (client) => {
+  let isUnique = false;
+  let code = '';
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    code = crypto.randomInt(100000, 999999).toString();
+    attempts++;
+
+    // Check if code already exists in confirmed or in_progress bookings
+    const checkQuery = `
+      SELECT id FROM bookings 
+      WHERE checkin_code = $1 
+      AND status IN ('confirmed', 'in_progress')
+      LIMIT 1;
+    `;
+    const res = await client.query(checkQuery, [code]);
+    
+    if (res.rows.length === 0) {
+      isUnique = true;
+    }
+  }
+
+  if (!isUnique) {
+    throw new Error('Failed to generate unique check-in code after multiple attempts');
+  }
+
+  return code;
 };
+
+// ================================================================
+// CREATE BOOKING
+// ================================================================
 
 /**
  * Creates a new booking with strict transactional double-booking prevention.
  * PRD 11.7: Double-booking prevented at DB level via transactional locks.
  * PRD 10.10: Blocks corporate bookings if budget is exceeded.
+ * FIX: Bookings start as 'pending_payment' and become 'confirmed' after payment.
  */
 export const createBooking = async ({ seekerId, workspaceId, startTime, endTime, corporateAccountId = null, totalAmount }) => {
   const client = await db.connect();
@@ -29,7 +71,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
   try {
     await client.query('BEGIN');
 
-    // 1. Lock workspace row to prevent concurrent race conditions
+    // 1. Lock workspace row to prevent concurrent modifications
     const workspaceRes = await client.query(
       `SELECT id, host_id, status FROM workspaces WHERE id = $1 FOR UPDATE`,
       [workspaceId]
@@ -41,7 +83,8 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     const workspace = workspaceRes.rows[0];
 
-    if (workspace.status !== 'published' && workspace.status !== 'admin_approved') {
+    // Check if workspace is active and available for booking
+    if (workspace.status !== 'approved' && workspace.status !== 'admin_approved') {
       throw new Error('Workspace is not currently active or available for booking.');
     }
 
@@ -53,7 +96,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
     // 3. Corporate Budget Enforcement (PRD Section 10.10 & 11.14)
     if (corporateAccountId) {
       const corporateRes = await client.query(
-        `SELECT budget_amount FROM corporate_accounts WHERE id = $1`,
+        `SELECT budget_amount FROM corporate_accounts WHERE id = $1 FOR UPDATE`,
         [corporateAccountId]
       );
 
@@ -63,7 +106,8 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
         const spendRes = await client.query(
           `SELECT COALESCE(SUM(total_amount), 0) AS total_spent 
            FROM bookings 
-           WHERE corporate_account_id = $1 AND status IN ('confirmed', 'in_progress', 'completed')`,
+           WHERE corporate_account_id = $1 
+           AND status IN ('confirmed', 'in_progress', 'completed', 'pending_payment')`,
           [corporateAccountId]
         );
 
@@ -76,11 +120,12 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       }
     }
 
-    // 4. Overlap Check using PostgreSQL Range Overlap Operators
+    // 4. CRITICAL FIX: Overlap Check with FOR UPDATE lock on bookings table
+    // Includes 'pending_payment' status to prevent double-booking during payment
     const overlapQuery = `
       SELECT id FROM bookings
       WHERE workspace_id = $1
-        AND status IN ('confirmed', 'in_progress', 'pending')
+        AND status IN ('confirmed', 'in_progress', 'pending', 'pending_payment')
         AND (start_time, end_time) OVERLAPS ($2::timestamptz, $3::timestamptz)
       FOR UPDATE;
     `;
@@ -90,19 +135,25 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       throw new Error('Selected time slot is no longer available.');
     }
 
-    // 5. Determine booking mode/status and Check-in Code Generation
-    const bookingMode = 'instant'; 
-    const initialStatus = bookingMode === 'instant' ? 'confirmed' : 'pending';
-    
-    // PRD 10.5 & 11.11: 6-digit code for instant/approved bookings
-    const checkinCode = initialStatus === 'confirmed' ? generateCheckinCode() : null;
+    // 5. Determine booking mode and status
+    // FIX: Bookings start as 'pending_payment' and become 'confirmed' after payment
+    const bookingMode = 'instant';
+    const initialStatus = 'pending_payment'; // ← Bookings require payment first
 
-    // 6. Insert Booking Record
+    // 6. Insert Booking Record (NO check-in code generated yet)
     const insertQuery = `
       INSERT INTO bookings (
-        workspace_id, seeker_id, corporate_account_id, start_time, end_time, 
-        mode, status, checkin_code, total_amount, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        workspace_id, 
+        seeker_id, 
+        corporate_account_id, 
+        start_time, 
+        end_time, 
+        mode, 
+        status, 
+        total_amount, 
+        created_at,
+        failed_checkin_attempts
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), 0)
       RETURNING *;
     `;
     const insertValues = [
@@ -113,14 +164,15 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
       endTime,
       bookingMode,
       initialStatus,
-      checkinCode,
       totalAmount
     ];
 
     const newBookingRes = await client.query(insertQuery, insertValues);
+    const newBooking = newBookingRes.rows[0];
 
     await client.query('COMMIT');
-    return newBookingRes.rows[0];
+    return newBooking;
+
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -128,6 +180,10 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
     client.release();
   }
 };
+
+// ================================================================
+// ACCEPT BOOKING REQUEST (Request-to-Book)
+// ================================================================
 
 /**
  * Host accepts a Request-to-Book request.
@@ -139,12 +195,13 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
   try {
     await client.query('BEGIN');
 
-    // Check Host Authorization
+    // Check Host Authorization with FOR UPDATE
     const bookingQuery = `
       SELECT b.id, b.status, w.host_id 
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
-      WHERE b.id = $1 FOR UPDATE;
+      WHERE b.id = $1 
+      FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
 
@@ -159,15 +216,20 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
       throw new Error('Unauthorized: You are not the host of this workspace.');
     }
 
+    // Only pending requests can be accepted
     if (booking.status !== 'pending') {
       throw new Error(`Booking cannot be accepted because it is currently in '${booking.status}' status.`);
     }
 
-    const checkinCode = generateCheckinCode();
+    // Generate unique check-in code
+    const checkinCode = await generateUniqueCheckinCode(client);
 
+    // Update booking status and set check-in code
     const updateQuery = `
       UPDATE bookings
-      SET status = 'confirmed', checkin_code = $1, updated_at = NOW()
+      SET status = 'confirmed', 
+          checkin_code = $1, 
+          updated_at = NOW()
       WHERE id = $2
       RETURNING *;
     `;
@@ -175,6 +237,7 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
 
     await client.query('COMMIT');
     return updatedRes.rows[0];
+
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -182,6 +245,10 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
     client.release();
   }
 };
+
+// ================================================================
+// DECLINE BOOKING REQUEST (Request-to-Book)
+// ================================================================
 
 /**
  * Host declines a Request-to-Book request.
@@ -211,7 +278,8 @@ export const declineBookingRequest = async (bookingId, hostId) => {
 
   const updateQuery = `
     UPDATE bookings
-    SET status = 'declined', updated_at = NOW()
+    SET status = 'declined', 
+        updated_at = NOW()
     WHERE id = $1
     RETURNING *;
   `;
@@ -219,9 +287,13 @@ export const declineBookingRequest = async (bookingId, hostId) => {
   return result.rows[0];
 };
 
+// ================================================================
+// CHECK-IN VERIFICATION
+// ================================================================
+
 /**
  * Verifies the 6-digit Check-In code submitted by the Host and starts the session.
- * Includes rate limiting protection (PRD 10.7 & 11.11).
+ * Includes rate limiting protection (PRD 11.11 - Locked after 3 incorrect tries).
  */
 export const processCheckIn = async (bookingId, checkinCode, hostId) => {
   const client = await db.connect();
@@ -230,10 +302,16 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     await client.query('BEGIN');
 
     const bookingQuery = `
-      SELECT b.id, b.status, b.checkin_code, b.failed_checkin_attempts, w.host_id 
+      SELECT 
+        b.id, 
+        b.status, 
+        b.checkin_code, 
+        COALESCE(b.failed_checkin_attempts, 0) AS failed_checkin_attempts, 
+        w.host_id 
       FROM bookings b
       JOIN workspaces w ON b.workspace_id = w.id
-      WHERE b.id = $1 FOR UPDATE;
+      WHERE b.id = $1 
+      FOR UPDATE;
     `;
     const bookingRes = await client.query(bookingQuery, [bookingId]);
 
@@ -249,7 +327,8 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     }
 
     // 2. Lockout Check (PRD 11.11 - Locked after 3 incorrect tries)
-    if (booking.failed_checkin_attempts >= 3) {
+    const failedAttempts = parseInt(booking.failed_checkin_attempts) || 0;
+    if (failedAttempts >= 3) {
       throw new Error('Check-in locked due to 3 failed attempts. Please contact Support.');
     }
 
@@ -260,14 +339,14 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
 
     // 4. Code Verification Check
     if (booking.checkin_code !== checkinCode.toString().trim()) {
-      const newAttempts = (booking.failed_checkin_attempts || 0) + 1;
+      const newAttempts = failedAttempts + 1;
       
       await client.query(
-        `UPDATE bookings SET failed_checkin_attempts = $1 WHERE id = $2`,
+        `UPDATE bookings SET failed_checkin_attempts = $1, updated_at = NOW() WHERE id = $2`,
         [newAttempts, bookingId]
       );
 
-      await client.query('COMMIT'); // Persist failed attempt count
+      await client.query('COMMIT');
 
       const remainingAttempts = 3 - newAttempts;
       const errorMessage = remainingAttempts <= 0
@@ -280,13 +359,15 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
     // 5. Successful Check-in Transition (Confirmed -> In Progress)
     const updateBooking = `
       UPDATE bookings
-      SET status = 'in_progress', updated_at = NOW()
+      SET status = 'in_progress', 
+          updated_at = NOW(),
+          failed_checkin_attempts = 0  -- Reset on successful check-in
       WHERE id = $1
       RETURNING *;
     `;
     const updatedRes = await client.query(updateBooking, [bookingId]);
 
-    // Record check-in audit event (PRD 14: BookingCheckIns table)
+    // 6. Record check-in audit event (PRD 14: BookingCheckIns table)
     const auditQuery = `
       INSERT INTO booking_checkins (booking_id, checked_in_at, method)
       VALUES ($1, NOW(), '6-digit-code');
@@ -295,6 +376,7 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
 
     await client.query('COMMIT');
     return updatedRes.rows[0];
+
   } catch (error) {
     // Only rollback if the transaction block is still active
     try {
@@ -312,6 +394,10 @@ export const processCheckIn = async (bookingId, checkinCode, hostId) => {
  * Alias for processCheckIn to map with controller naming
  */
 export const verifyAndCheckIn = processCheckIn;
+
+// ================================================================
+// GET BOOKING BY ID
+// ================================================================
 
 /**
  * Fetch booking details by ID
@@ -333,6 +419,10 @@ export const getBookingById = async (bookingId, userId, role) => {
 
   return booking;
 };
+
+// ================================================================
+// GET USER BOOKINGS (Booking History)
+// ================================================================
 
 /**
  * Fetches Seeker or Host Booking History (PRD Section 11.7a)
@@ -387,8 +477,12 @@ export const getUserBookings = async ({ userId, role = 'seeker', status, page = 
   };
 };
 
+// ================================================================
+// CANCEL BOOKING
+// ================================================================
+
 /**
- * Cancel a confirmed booking
+ * Cancel a booking (pending_payment, pending, or confirmed)
  */
 export const cancelBooking = async (bookingId, userId, reason) => {
   const bookingQuery = `
@@ -415,10 +509,27 @@ export const cancelBooking = async (bookingId, userId, reason) => {
 
   const updateQuery = `
     UPDATE bookings
-    SET status = 'cancelled', updated_at = NOW()
+    SET status = 'cancelled', 
+        updated_at = NOW()
     WHERE id = $1
     RETURNING *;
   `;
   const result = await db.query(updateQuery, [bookingId]);
   return { booking: result.rows[0], cancellationReason: reason };
+};
+
+// ================================================================
+// EXPORTS
+// ================================================================
+
+export default {
+  generateUniqueCheckinCode,
+  createBooking,
+  acceptBookingRequest,
+  declineBookingRequest,
+  processCheckIn,
+  verifyAndCheckIn,
+  getBookingById,
+  getUserBookings,
+  cancelBooking
 };

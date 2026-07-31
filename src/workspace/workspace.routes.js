@@ -8,7 +8,8 @@ import {
   handleUpdateWorkspace,
   handleDeleteWorkspace,
   handleUploadWorkspacePhoto,
-  handleUpdateWorkspaceStatus
+  handleUpdateWorkspaceStatus,
+  handleGetWorkspaceAvailability  // ← ADD THIS LINE
 } from './workspace.controller.js';
 
 const router = Router();
@@ -20,5 +21,6 @@ router.put('/:id', handleUpdateWorkspace);
 router.delete('/:id', handleDeleteWorkspace);
 router.post('/:id/photos', upload.single('photo'), handleUploadWorkspacePhoto);
 router.patch('/:id/status', protect, authorize('admin', 'platform_admin'), handleUpdateWorkspaceStatus);
+router.get('/:id/availability', handleGetWorkspaceAvailability);
 
 export default router;
