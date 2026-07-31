@@ -18,7 +18,7 @@ SELECT
   NOW(),
   NOW()
 FROM users u
-WHERE (u.role = 'host' OR 'host' = ANY(u.roles))
+WHERE (u.role = 'host')
 AND NOT EXISTS (
   SELECT 1 FROM withdrawal_limits wl WHERE wl.host_id = u.id
 );
@@ -35,7 +35,7 @@ SELECT
   NOW(),
   NOW()
 FROM users u
-WHERE (u.role = 'host' OR 'host' = ANY(u.roles))
+WHERE (u.role = 'host')
 AND NOT EXISTS (
   SELECT 1 FROM wallets w WHERE w.host_id = u.id
 );
@@ -77,10 +77,17 @@ CREATE TABLE IF NOT EXISTS admin_logs (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Add foreign key constraint
-ALTER TABLE admin_logs 
-  ADD CONSTRAINT fk_admin_logs_admin 
-  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE;
+-- Add foreign key constraint (guarded, since ADD CONSTRAINT has no IF NOT EXISTS)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_admin_logs_admin'
+  ) THEN
+    ALTER TABLE admin_logs
+      ADD CONSTRAINT fk_admin_logs_admin
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- Add index
 CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id 
