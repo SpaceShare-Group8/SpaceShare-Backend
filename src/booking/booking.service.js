@@ -9,7 +9,7 @@
 
 import crypto from "crypto";
 import db from "../common/config/db.js"; // Database pool connection
- * 
+ /* 
  * FIXES APPLIED:
  * 1. Double-booking prevention with proper FOR UPDATE locks on bookings table
  * 2. Unique check-in code generation with retry logic
