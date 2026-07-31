@@ -225,9 +225,9 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 
         FROM information_schema.tables 
-        WHERE table_name = 'reliabilityreviews'
+        WHERE table_name = 'reliability_reviews'
     ) THEN
-        CREATE TABLE reliabilityreviews (
+        CREATE TABLE reliability_reviews (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             booking_id UUID NOT NULL,
             workspace_id UUID NOT NULL,
@@ -237,9 +237,9 @@ BEGIN
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             UNIQUE(booking_id)
         );
-        RAISE NOTICE '✅ Created reliabilityreviews table';
+        RAISE NOTICE '✅ Created reliability_reviews table';
     ELSE
-        RAISE NOTICE '⏭️  reliabilityreviews table already exists';
+        RAISE NOTICE '⏭️  reliability_reviews table already exists';
     END IF;
 END $$;
 
@@ -252,9 +252,9 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 
         FROM information_schema.tables 
-        WHERE table_name = 'supporttickets'
+        WHERE table_name = 'support_tickets'
     ) THEN
-        CREATE TABLE supporttickets (
+        CREATE TABLE support_tickets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL,
             category VARCHAR(50) NOT NULL,
@@ -267,9 +267,9 @@ BEGIN
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
-        RAISE NOTICE '✅ Created supporttickets table';
+        RAISE NOTICE '✅ Created support_tickets table';
     ELSE
-        RAISE NOTICE '⏭️  supporttickets table already exists';
+        RAISE NOTICE '⏭️  support_tickets table already exists';
     END IF;
 END $$;
 
@@ -339,9 +339,9 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 
         FROM information_schema.tables 
-        WHERE table_name = 'bookingcheckins'
+        WHERE table_name = 'booking_checkins'
     ) THEN
-        CREATE TABLE bookingcheckins (
+        CREATE TABLE booking_checkins (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             booking_id UUID NOT NULL,
             checked_in_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -350,9 +350,9 @@ BEGIN
             host_id UUID,
             metadata JSONB DEFAULT '{}'::jsonb
         );
-        RAISE NOTICE '✅ Created bookingcheckins table';
+        RAISE NOTICE '✅ Created booking_checkins table';
     ELSE
-        RAISE NOTICE '⏭️  bookingcheckins table already exists';
+        RAISE NOTICE '⏭️  booking_checkins table already exists';
     END IF;
 END $$;
 
