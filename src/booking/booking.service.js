@@ -61,7 +61,7 @@ export const generateUniqueCheckinCode = async (client) => {
 
 export const createBooking = async ({ seekerId, workspaceId, startTime, endTime, corporateAccountId = null, totalAmount }) => {
   const client = await db.connect();
-=======
+
 export const createBooking = async ({
   seekerId,
   workspaceId,
