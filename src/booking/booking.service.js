@@ -76,6 +76,7 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
     const workspace = workspaceRes.rows[0];
 
+    // Check if workspace is active and available for booking
     if (workspace.status !== 'published' && workspace.status !== 'admin_approved') {
       throw new Error('Workspace is not currently active or available for booking.');
     }
@@ -194,12 +195,14 @@ export const acceptBookingRequest = async (bookingId, hostId) => {
       throw new Error('Unauthorized: You are not the host of this workspace.');
     }
 
+    // Only pending requests can be accepted
     if (booking.status !== 'pending') {
       throw new Error(`Booking cannot be accepted because it is currently in '${booking.status}' status.`);
     }
 
     const checkinCode = await generateUniqueCheckinCode(client);
 
+    // Update booking status and set check-in code
     const updateQuery = `
       UPDATE bookings
       SET status = 'confirmed', 

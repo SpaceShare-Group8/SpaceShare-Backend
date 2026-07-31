@@ -16,10 +16,10 @@ export async function createWorkspace(data) {
 
     const result = await pool.query(
         `INSERT INTO workspaces
-      (host_id, title, description, workspace_type, capacity, address, city, state, latitude, longitude)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      (host_id, title, description, workspace_type, capacity, address, city, state, latitude, longitude, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
-        [host_id, title, description, workspace_type, capacity, address, city, state, latitude, longitude]
+        [host_id, title, description, workspace_type, capacity, address, city, state, latitude, longitude, 'draft']
     );
 
     return result.rows[0];
@@ -166,3 +166,22 @@ export async function countWorkspacePhotos(workspace_id) {
       [user_id, title, message]
     );
   }
+
+  export async function getWorkspaceAvailability(workspaceId, date) {
+  const result = await pool.query(
+    `SELECT 
+      id,
+      workspace_id,
+      date,
+      start_time,
+      end_time,
+      is_blocked
+    FROM availability_calendars 
+    WHERE workspace_id = $1 
+    AND date = $2
+    ORDER BY start_time`,
+    [workspaceId, date]
+  );
+
+  return result.rows;
+}
