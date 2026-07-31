@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --detectOpenHandles"
+    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --detectOpenHandles",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "migrate": "node scripts/run-migrations.js"
   },
   "jest": {
     "testEnvironment": "node",
@@ -15,8 +18,7 @@
       "./tests/setup.js"
     ],
     "transform": {},
-    "extensionToTreatAsEsm":
-    [".js"]
+    "extensionsToTreatAsEsm": []
   },
   "repository": {
     "type": "git",
@@ -30,6 +32,7 @@
   },
   "homepage": "https://github.com/spaceshare-group8/spaceshare-backend#readme",
   "dependencies": {
+    "axios": "^1.19.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
@@ -39,7 +42,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "node-cron": "^4.6.0",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "podil": "^0.3.7"
   },
   "devDependencies": {
     "@jest/globals": "^30.4.1",
