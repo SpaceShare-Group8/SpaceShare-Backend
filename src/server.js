@@ -9,7 +9,7 @@ import workspaceRoutes from "./workspace/workspace.routes.js";
 import bookingRoutes from "./booking/booking.routes.js";
 import corporateRoutes from "./corporate/corporate.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
-import paymentRoutes from "./payments/payment.routes.js";
+import paymentRoutes from "./payments/routes/payment.routes.js"
 
 /* Load environment variables */
 dotenv.config();
