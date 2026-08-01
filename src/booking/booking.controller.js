@@ -205,6 +205,28 @@ export const cancelBooking = async (req, res, next) => {
 };
 
 /**
+ * Seeker extends an in-progress booking into additional time
+ * PATCH /api/bookings/:id/extend
+ */
+export const extendBooking = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const { newEndTime } = req.body;
+
+    const booking = await bookingService.extendBooking(id, userId, newEndTime);
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Booking extended successfully',
+      data: { booking },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Verify 6-digit check-in code and mark booking as IN_PROGRESS
  * POST /api/bookings/:id/checkin
  */

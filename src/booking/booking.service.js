@@ -160,6 +160,9 @@ export const createBooking = async ({ seekerId, workspaceId, startTime, endTime,
 
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error.code === '23P01') {
+      throw new Error('Selected time slot is no longer available.');
+    }
     throw error;
   } finally {
     client.release();
@@ -478,6 +481,94 @@ export const cancelBooking = async (bookingId, userId, reason) => {
 };
 
 // ================================================================
+// EXTEND BOOKING
+// ================================================================
+
+export const extendBooking = async (bookingId, userId, newEndTime) => {
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const bookingQuery = `
+      SELECT b.id, b.status, b.seeker_id, b.workspace_id, b.start_time, b.end_time
+      FROM bookings b
+      WHERE b.id = $1
+      FOR UPDATE;
+    `;
+    const bookingRes = await client.query(bookingQuery, [bookingId]);
+
+    if (bookingRes.rows.length === 0) {
+      const err = new Error('Booking not found.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const booking = bookingRes.rows[0];
+
+    if (booking.seeker_id !== userId) {
+      const err = new Error('Unauthorized: Only the seeker who made this booking can extend it.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (booking.status !== 'in_progress') {
+      const err = new Error(`Booking cannot be extended because it is currently '${booking.status}'. Only in-progress bookings can be extended.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (new Date(newEndTime) <= new Date(booking.end_time)) {
+      const err = new Error('New end time must be after the current end time.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const overlapQuery = `
+      SELECT id FROM bookings
+      WHERE workspace_id = $1
+        AND id != $2
+        AND status IN ('confirmed', 'in_progress', 'pending', 'pending_payment')
+        AND (start_time, end_time) OVERLAPS ($3::timestamptz, $4::timestamptz)
+      FOR UPDATE;
+    `;
+    const overlapRes = await client.query(overlapQuery, [
+      booking.workspace_id,
+      bookingId,
+      booking.end_time,
+      newEndTime
+    ]);
+
+    if (overlapRes.rows.length > 0) {
+      const err = new Error('Cannot extend: the additional time overlaps another booking.');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const updateQuery = `
+      UPDATE bookings
+      SET end_time = $1, updated_at = NOW()
+      WHERE id = $2
+      RETURNING *;
+    `;
+    const result = await client.query(updateQuery, [newEndTime, bookingId]);
+
+    await client.query('COMMIT');
+    return result.rows[0];
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23P01') {
+      const conflictErr = new Error('Cannot extend: the additional time overlaps another booking.');
+      conflictErr.statusCode = 409;
+      throw conflictErr;
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+// ================================================================
 // EXPORTS
 // ================================================================
 
@@ -490,5 +581,6 @@ export default {
   verifyAndCheckIn,
   getBookingById,
   getUserBookings,
-  cancelBooking
+  cancelBooking,
+  extendBooking
 };
