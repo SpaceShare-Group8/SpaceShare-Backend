@@ -7,6 +7,7 @@ import workspaceRoutes from "./workspace/workspace.routes.js";
 import bookingRoutes from "./booking/booking.routes.js";
 import corporateRoutes from "./corporate/corporate.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
+import paymentRoutes from "./payments/routes/payment.routes.js";
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/corporate", corporateRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // Root 
 app.get("/", (req, res) => {
