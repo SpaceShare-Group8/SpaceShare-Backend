@@ -14,6 +14,7 @@ import {
   acceptBookingRequest,
   declineBookingRequest,
   cancelBooking,
+  extendBooking,
   checkIn,
 } from './booking.controller.js';
 
@@ -102,6 +103,16 @@ router.patch(
 );
 
 /**
+ * @route   PATCH /api/bookings/:id/extend
+ * @desc    Extend an in-progress booking with additional time
+ * @access  Private (Seeker who made the booking)
+ */
+router.patch(
+  '/:id/extend',
+  validateBookingIdParam,
+  extendBooking
+);
+/**
  * @route   POST /api/bookings/:id/checkin
  * @desc    Verify 6-digit check-in code and update status to IN_PROGRESS
  * @access  Private (Host)
@@ -112,5 +123,4 @@ router.post(
   validateCheckIn,
   checkIn
 );
-
 export default router;

@@ -135,6 +135,8 @@ const cancelBooking = async (req, res, next) => {
   }
 };
 
+
+
 module.exports = {
   acceptBookingRequest,
   declineBookingRequest,
