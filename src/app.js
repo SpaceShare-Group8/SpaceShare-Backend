@@ -9,6 +9,8 @@ import corporateRoutes from "./corporate/corporate.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
 import paymentRoutes from "./payments/routes/payment.routes.js";
 import supportRoutes from "./support/support.routes.js";
+import favoritesRoutes from "./favorites/favorites.routes.js";
+import searchRoutes from "./search/search.routes.js";
 
 const app = express();
 
@@ -25,6 +27,8 @@ app.use("/api/corporate", corporateRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/support", supportRoutes);
+app.use("/api/favorites", favoritesRoutes);
+app.use("/api/search", searchRoutes);
 
 // Root
 app.get("/", (req, res) => {
