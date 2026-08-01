@@ -1,72 +1,103 @@
-/**
- * Simple sequential migration runner.
- * Runs every .sql file in /migrations in filename order, inside a transaction,
- * and records what's already been applied so re-running is safe.
- *
- * Usage:
- *   node scripts/run-migrations.js
- */
-
-import 'dotenv/config';
+import { Client } from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client } from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
+async function runMigrations() {
+    const client = new Client({
+        connectionString: process.env.DATABASE_URL,
+        connectionTimeoutMillis: 30000,
+        ssl: {
+            rejectUnauthorized: false
+        }
+    });
 
-async function run() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+    try {
+        console.log('🔄 Connecting to database...');
+        await client.connect();
+        console.log('✅ Connected to database');
 
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        name        VARCHAR(255) PRIMARY KEY,
-        applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
+        // Create migrations table if it doesn't exist
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS "Migrations" (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE,
+                applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        `);
 
-    const applied = new Set(
-      (await client.query('SELECT name FROM schema_migrations')).rows.map((r) => r.name)
-    );
+        // Get all SQL files from migrations folder
+        const migrationsDir = path.join(__dirname, '..', 'migrations');
+        
+        if (!fs.existsSync(migrationsDir)) {
+            console.log('⚠️ Migrations folder not found');
+            return;
+        }
 
-    const files = fs
-      .readdirSync(MIGRATIONS_DIR)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
+        const files = fs.readdirSync(migrationsDir)
+            .filter(f => f.endsWith('.sql'))
+            .sort();
 
-    for (const file of files) {
-      if (applied.has(file)) {
-        console.log(`skip (already applied): ${file}`);
-        continue;
-      }
+        console.log(`📁 Found ${files.length} migration files`);
 
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-      console.log(`applying: ${file}`);
+        let appliedCount = 0;
+        let skippedCount = 0;
 
-      await client.query('BEGIN');
-      try {
-        await client.query(sql);
-        await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-        await client.query('COMMIT');
-        console.log(`  done: ${file}`);
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw new Error(`Migration failed on ${file}: ${err.message}`);
-      }
+        for (const file of files) {
+            // Check if migration already applied
+            const result = await client.query(
+                'SELECT id FROM "Migrations" WHERE name = $1',
+                [file]
+            );
+
+            if (result.rows.length > 0) {
+                console.log(`⏭️  Skipping ${file} (already applied)`);
+                skippedCount++;
+                continue;
+            }
+
+            console.log(`🔄 Applying ${file}...`);
+            
+            const filePath = path.join(migrationsDir, file);
+            const sql = fs.readFileSync(filePath, 'utf8');
+
+            try {
+                await client.query(sql);
+                await client.query(
+                    'INSERT INTO "Migrations" (name) VALUES ($1)',
+                    [file]
+                );
+                console.log(`✅ Applied ${file}`);
+                appliedCount++;
+            } catch (err) {
+                console.error(`❌ Failed to apply ${file}:`, err.message);
+                throw err;
+            }
+        }
+
+        console.log(`📊 Summary: ${appliedCount} applied, ${skippedCount} skipped`);
+        console.log('✅ Migration script completed');
+
+    } catch (error) {
+        console.error('❌ Migration failed:', error.message);
+        throw error;
+    } finally {
+        await client.end();
     }
-
-    console.log('All migrations up to date.');
-  } finally {
-    await client.end();
-  }
 }
 
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Run migrations
+runMigrations()
+    .then(() => {
+        process.exit(0);
+    })
+    .catch((error) => {
+        console.error('❌ Migration script failed:', error.message);
+        process.exit(1);
+    });

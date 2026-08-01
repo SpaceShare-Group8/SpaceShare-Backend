@@ -35,7 +35,11 @@ export const createBooking = async (req, res, next) => {
       data: { booking },
     });
   } catch (error) {
-    if (error.message.includes('already booked') || error.message.includes('unavailable')) {
+    if (
+      error.message.includes('already booked') ||
+      error.message.includes('unavailable') ||
+      error.message.includes('no longer available')
+    ) {
       return res.status(409).json({
         status: 'error',
         message: error.message,
@@ -69,7 +73,6 @@ export const getBookingById = async (req, res, next) => {
         message: 'Booking not found',
       });
     }
-
     return res.status(200).json({
       status: 'success',
       data: { booking },
