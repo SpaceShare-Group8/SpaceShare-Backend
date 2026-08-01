@@ -13,6 +13,7 @@
  * 
  */
 
+import 'dotenv/config';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
 const SEEKER_ACCESS_TOKEN = process.env.SEEKER_ACCESS_TOKEN;
 const WORKSPACE_ID = process.env.WORKSPACE_ID;
@@ -21,8 +22,8 @@ if (!SEEKER_ACCESS_TOKEN || !WORKSPACE_ID) {
   throw new Error('Set SEEKER_ACCESS_TOKEN and WORKSPACE_ID env vars before running this script.');
 }
 // Use a slot that hasn't been booked yet — change if this one is taken.
-const START_TIME = '2026-08-03T14:00:00Z';
-const END_TIME = '2026-08-03T16:00:00Z';
+const START_TIME = '2026-09-03T14:00:00Z';
+const END_TIME = '2026-09-03T16:00:00Z';
 
 async function attemptBooking(label) {
   const res = await fetch(`${BASE_URL}/api/bookings`, {
