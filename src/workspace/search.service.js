@@ -32,6 +32,8 @@ export async function searchWorkspaces({
   max_price,
 
   amenity,
+  amenities,
+  sort,
 
   latitude,
   longitude,
@@ -41,7 +43,10 @@ export async function searchWorkspaces({
   start_time,
   end_time,
 }) {
-  const offset = (page - 1) * limit;
+  page = Math.max(1, Number(page) || 1);
+limit = Math.min(50, Math.max(1, Number(limit) || 10));
+
+const offset = (page - 1) * limit;
 
   const values = [];
   const where = [];
@@ -166,11 +171,27 @@ ON ac.workspace_id = w.id
     where.push(`wp.amount <= $${values.length}`);
   }
 
-  //Amenity
-  if (amenity) {
-    values.push(amenity);
-    where.push(`wa.amenity_name=$${values.length}`);
-  }
+// Amenities (supports multiple values)
+// Example:
+// ?amenities=wifi,parking,generator
+
+const amenityFilters =
+  amenities && amenities.length
+    ? amenities
+    : amenity
+      ? [amenity]
+      : [];
+
+if (amenityFilters.length > 0) {
+  const placeholders = amenityFilters.map((item) => {
+    values.push(item.trim());
+    return `$${values.length}`;
+  });
+
+  where.push(`
+wa.amenity_name IN (${placeholders.join(",")})
+`);
+}
 
   //Availability
 
@@ -234,12 +255,12 @@ wp.pricing_type,
 wp.amount
 `;
 
-  //Radius Filter
+// Radius Filter
 
-  if (latitude && longitude && radius) {
-    values.push(radius);
+if (latitude && longitude && radius) {
+  values.push(radius);
 
-    query += `
+  query += `
 HAVING
 (
 6371 * acos(
@@ -248,7 +269,7 @@ cos(radians($1))
 cos(radians(w.latitude))
 *
 cos(
-radians(w.longitude)-radians($2)
+radians(w.longitude) - radians($2)
 )
 +
 sin(radians($1))
@@ -258,20 +279,70 @@ sin(radians(w.latitude))
 )
 <= $${values.length}
 `;
-  }
+}
+// Sorting
+// TODO:
+// Replace created_at with reliability_score DESC
+// once the Trust Engine module is merged.
 
-  //Sorting
-
-  if (latitude && longitude) {
-    query += `
-ORDER BY distance ASC
+switch (sort) {
+  case "distance":
+    if (latitude && longitude) {
+      query += `
+ORDER BY
+distance ASC,
+w.created_at DESC
 `;
-  } else {
-    query += `
-ORDER BY w.created_at DESC
+    } else {
+      query += `
+ORDER BY
+w.created_at DESC
 `;
-  }
+    }
+    break;
 
+  case "price_low":
+    query += `
+ORDER BY
+wp.amount ASC NULLS LAST
+`;
+    break;
+
+  case "price_high":
+    query += `
+ORDER BY
+wp.amount DESC NULLS LAST
+`;
+    break;
+
+  case "newest":
+    query += `
+ORDER BY
+w.created_at DESC
+`;
+    break;
+
+  case "reliability":
+    query += `
+ORDER BY
+w.created_at DESC
+`;
+    break;
+
+  default:
+    if (latitude && longitude) {
+      query += `
+ORDER BY
+distance ASC,
+w.created_at DESC
+`;
+    } else {
+      query += `
+ORDER BY
+w.created_at DESC
+`;
+    }
+}
   //Pagination
 
   values.push(limit);
