@@ -8,10 +8,13 @@ import bookingRoutes from "./booking/booking.routes.js";
 import corporateRoutes from "./corporate/corporate.routes.js";
 import adminRoutes from "./admin/admin.routes.js";
 import paymentRoutes from "./payments/routes/payment.routes.js";
+import supportRoutes from "./support/support.routes.js";
+import favoritesRoutes from "./favorites/favorites.routes.js";
+import searchRoutes from "./search/search.routes.js";
 
 const app = express();
 
-// Middleware 
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -23,8 +26,11 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/corporate", corporateRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/support", supportRoutes);
+app.use("/api/favorites", favoritesRoutes);
+app.use("/api/search", searchRoutes);
 
-// Root 
+// Root
 app.get("/", (req, res) => {
   res.send("Welcome to the SpaceShare API!");
 });
