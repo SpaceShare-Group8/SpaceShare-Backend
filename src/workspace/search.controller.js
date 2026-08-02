@@ -3,7 +3,8 @@ import { searchWorkspaceListings } from "./search.service.js";
 /**
  * GET /api/workspaces/search
  *
- * Query Parameters:
+ * Supported Query Parameters
+ * --------------------------
  * page
  * limit
  * city
@@ -12,14 +13,25 @@ import { searchWorkspaceListings } from "./search.service.js";
  * pricing_type
  * min_price
  * max_price
- * amenity
+ * amenity              
+ * amenities              
  * latitude
  * longitude
  * radius
  * date
  * start_time
  * end_time
+ * sort
+ *
+ * Sort options:
+ * --------------
+ * reliability
+ * distance
+ * newest
+ * price_low
+ * price_high
  */
+
 export async function handleSearchWorkspaces(req, res) {
   try {
     const {
@@ -31,13 +43,19 @@ export async function handleSearchWorkspaces(req, res) {
       pricing_type,
       min_price,
       max_price,
+
       amenity,
+      amenities,
+
       latitude,
       longitude,
       radius,
+
       date,
       start_time,
       end_time,
+
+      sort,
     } = req.query;
 
     const filters = {
@@ -54,7 +72,16 @@ export async function handleSearchWorkspaces(req, res) {
       min_price: min_price ? Number(min_price) : undefined,
       max_price: max_price ? Number(max_price) : undefined,
 
+      // Backward compatibility
       amenity,
+
+      // Preferred Day 6 format
+      amenities: amenities
+        ? amenities
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : undefined,
 
       latitude: latitude ? Number(latitude) : undefined,
       longitude: longitude ? Number(longitude) : undefined,
@@ -63,6 +90,9 @@ export async function handleSearchWorkspaces(req, res) {
       date,
       start_time,
       end_time,
+
+      // reliability | distance | newest | price_low | price_high
+      sort,
     };
 
     const workspaces = await searchWorkspaceListings(filters);
@@ -71,7 +101,6 @@ export async function handleSearchWorkspaces(req, res) {
       status: true,
       message: "Workspace search completed successfully.",
       count: workspaces.length,
-      filters,
       data: workspaces,
     });
   } catch (error) {
