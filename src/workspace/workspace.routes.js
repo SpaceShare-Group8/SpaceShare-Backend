@@ -16,6 +16,7 @@ import {
   handleUpdateWorkspaceStatus,
   handleListWorkspacePhotos,   
   handleDeleteWorkspacePhoto,
+  handleFindMePowerNow,
 } from "./workspace.controller.js";
 
 import availabilityRoutes from "../booking/availability/availability.routes.js";
@@ -26,6 +27,8 @@ const router = Router();
 router.post("/", protect, requireVerifiedHost, handleCreateWorkspace);
 
 router.get("/search", handleSearchWorkspaces);
+
+router.get("/find-me-power-now", handleFindMePowerNow);
 
 router.get("/:id", handleGetWorkspaceById);
 

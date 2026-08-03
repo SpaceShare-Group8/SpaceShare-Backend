@@ -104,24 +104,61 @@ export async function handleGetWorkspaceById(req, res) {
 
 export async function handleListWorkspaces(req, res) {
   try {
-    const { page, limit, city, workspace_type } = req.query;
+    const {
+      page = 1,
+      limit = 10,
 
-    const workspaces = await listWorkspaces({
-      page: page ? parseInt(page) : 1,
-      limit: limit ? parseInt(limit) : 10,
       city,
       workspace_type,
+
+      minCapacity,
+      minPrice,
+      maxPrice,
+
+      amenities,
+
+      date,
+      start_time,
+      end_time,
+
+      minReliabilityScore,
+    } = req.query;
+
+    const workspaces = await listWorkspaces({
+      page: Number(page),
+      limit: Number(limit),
+
+      city,
+      workspace_type,
+
+      minCapacity: minCapacity ? Number(minCapacity) : undefined,
+
+      minPrice: minPrice ? Number(minPrice) : undefined,
+      maxPrice: maxPrice ? Number(maxPrice) : undefined,
+
+      amenities,
+
+      date,
+      start_time,
+      end_time,
+
+      minReliabilityScore: minReliabilityScore
+        ? Number(minReliabilityScore)
+        : undefined,
     });
 
     return res.status(200).json({
-      status: true,
+      success: true,
+      count: workspaces.length,
       data: workspaces,
     });
-  } catch (err) {
-    console.error(err);
+
+  } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
-      status: false,
-      message: 'Failed to fetch workspaces',
+      success: false,
+      message: "Failed to fetch workspaces.",
     });
   }
 }
