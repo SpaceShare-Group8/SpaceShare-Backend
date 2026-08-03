@@ -92,6 +92,58 @@ export const validateCreateBooking = [
 ];
 
 /**
+ * Validation rules for submitting a post-booking review (PRD 9.8, 10.3, 11.12)
+ * POST /api/bookings/:id/review
+ */
+export const validateSubmitReview = [
+  param('id')
+    .notEmpty()
+    .withMessage('Booking ID is required')
+    .isUUID(4)
+    .withMessage('Booking ID must be a valid UUIDv4'),
+
+  body('overallRating')
+    .notEmpty()
+    .withMessage('Overall rating is required')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Overall rating must be between 1 and 5'),
+
+  body('powerReliabilityRating')
+    .notEmpty()
+    .withMessage('Power reliability rating is required')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Power reliability rating must be between 1 and 5'),
+
+  body('internetReliabilityRating')
+    .notEmpty()
+    .withMessage('Internet reliability rating is required')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Internet reliability rating must be between 1 and 5'),
+
+  body('powerStable')
+    .notEmpty()
+    .withMessage('powerStable is required')
+    .isBoolean()
+    .withMessage('powerStable must be true or false'),
+
+  body('internetAsDescribed')
+    .notEmpty()
+    .withMessage('internetAsDescribed is required')
+    .isBoolean()
+    .withMessage('internetAsDescribed must be true or false'),
+
+  body('comment')
+    .optional({ nullable: true })
+    .isString()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Comment must be under 1000 characters'),
+
+  validate,
+];
+
+
+/**
  * Validation rules for Check-In Code verification (PRD 10.7, 11.11)
  * POST /api/bookings/:id/checkin
  */

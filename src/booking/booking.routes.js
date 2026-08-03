@@ -16,12 +16,15 @@ import {
   cancelBooking,
   extendBooking,
   checkIn,
+  submitReview,
+  completeSession,
 } from './booking.controller.js';
 
 import {
   validateCreateBooking,
   validateCheckIn,
   validateBookingIdParam,
+  validateSubmitReview,
 } from './booking.validation.js';
 
 // Auth middleware import
@@ -123,4 +126,29 @@ router.post(
   validateCheckIn,
   checkIn
 );
+
+/**
+ * @route   POST /api/bookings/:id/review
+ * @desc    Seeker submits a post-booking review (feeds reliability score)
+ * @access  Private (Seeker who made the booking)
+ */
+router.post(
+  '/:id/review',
+  authorize('seeker', 'corporate_admin', 'corporate_employee'),
+  validateSubmitReview,
+  submitReview
+);
+
+/**
+ * @route   PATCH /api/bookings/:id/complete
+ * @desc    Host marks an in-progress session as completed
+ * @access  Private (Host who owns the workspace, or Admin)
+ */
+router.patch(
+  '/:id/complete',
+  authorize('host', 'admin'),
+  validateBookingIdParam,
+  completeSession
+);
+
 export default router;

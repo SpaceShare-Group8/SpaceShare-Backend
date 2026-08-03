@@ -131,23 +131,23 @@ export async function countWorkspacePhotos(workspace_id) {
     return result.rows[0].count;
   }
   
-  export async function updateWorkspaceMediaStatus(workspace_id, media_status) {
+export async function updateWorkspaceMediaStatus(workspace_id, media_status) {
     await pool.query(
       `UPDATE workspaces SET media_status = $1, updated_at = NOW() WHERE id = $2`,
       [media_status, workspace_id]
     );
-  }
+}
 
-  export async function updateWorkspaceStatusByAdmin(id, status) {
+export async function updateWorkspaceStatusByAdmin(id, status) {
     const result = await pool.query(
       `UPDATE workspaces SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
       [status, id]
     );
   
     return result.rows[0] || null;
-  }
+}
   
-  export async function getWorkspaceHostUserId(workspace_id) {
+export async function getWorkspaceHostUserId(workspace_id) {
     const result = await pool.query(
       `SELECT hp.user_id
        FROM workspaces w
@@ -157,18 +157,18 @@ export async function countWorkspacePhotos(workspace_id) {
     );
   
     return result.rows[0]?.user_id || null;
-  }
-  
-  export async function notifyHost(user_id, title, message) {
+}
+
+export async function notifyHost(user_id, title, message) {
     await pool.query(
       `INSERT INTO notifications (user_id, title, message, type)
        VALUES ($1, $2, $3, 'system')`,
       [user_id, title, message]
     );
-  }
+}
 
-  export async function getWorkspaceAvailability(workspaceId, date) {
-  const result = await pool.query(
+export async function getWorkspaceAvailability(workspaceId, date) {
+const result = await pool.query(
     `SELECT 
       id,
       workspace_id,
@@ -184,4 +184,31 @@ export async function countWorkspacePhotos(workspace_id) {
   );
 
   return result.rows;
+}
+
+export async function listWorkspacePhotos(workspace_id) {
+  const result = await pool.query(
+    `SELECT id, workspace_id, photo_url, cloudinary_public_id, is_cover, display_order, created_at
+     FROM workspace_photos
+     WHERE workspace_id = $1
+     ORDER BY display_order ASC, created_at ASC`,
+    [workspace_id]
+  );
+  return result.rows;
+}
+
+export async function getWorkspacePhotoById(photo_id, workspace_id) {
+  const result = await pool.query(
+    `SELECT * FROM workspace_photos WHERE id = $1 AND workspace_id = $2`,
+    [photo_id, workspace_id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteWorkspacePhotoRecord(photo_id, workspace_id) {
+  const result = await pool.query(
+    `DELETE FROM workspace_photos WHERE id = $1 AND workspace_id = $2 RETURNING id`,
+    [photo_id, workspace_id]
+  );
+  return result.rows.length > 0;
 }

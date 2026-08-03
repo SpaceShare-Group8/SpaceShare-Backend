@@ -15,8 +15,8 @@ export const findPendingHostProfiles = async () => {
       u.email,
       u.phone,
       u.created_at AS user_registered_at
-    FROM "HostProfiles" hp
-    JOIN "Users" u ON hp.user_id = u.id
+    FROM host_profiles hp
+    JOIN users u ON hp.user_id = u.id
     WHERE hp.verification_status = 'pending'
     ORDER BY u.created_at ASC;
   `;
@@ -29,7 +29,7 @@ export const findPendingHostProfiles = async () => {
  */
 export const updateHostVerificationStatus = async (userId, status) => {
   const query = `
-    UPDATE "HostProfiles"
+    UPDATE host_profiles
     SET verification_status = $2
     WHERE user_id = $1
     RETURNING user_id, business_name, verification_status;
@@ -47,15 +47,16 @@ export const findPendingWorkspaces = async () => {
       w.id,
       w.host_id,
       w.title,
-      w.space_type,
+      w.workspace_type,
       w.capacity,
       w.status,
       w.created_at,
       u.full_name AS host_name,
       u.email AS host_email
-    FROM "Workspaces" w
-    JOIN "Users" u ON w.host_id = u.id
-    WHERE w.status = 'pending'
+    FROM workspaces w
+    JOIN host_profiles hp ON w.host_id = hp.id
+    JOIN users u ON hp.user_id = u.id
+    WHERE w.status = 'published'
     ORDER BY w.created_at ASC;
   `;
   const res = await pool.query(query);
@@ -67,7 +68,7 @@ export const findPendingWorkspaces = async () => {
  */
 export const updateWorkspaceStatus = async (workspaceId, status) => {
   const query = `
-    UPDATE "Workspaces"
+    UPDATE workspaces
     SET status = $2
     WHERE id = $1
     RETURNING id, title, status;
@@ -94,9 +95,9 @@ export const findAllBookingsAdmin = async (statusFilter) => {
       b.status,
       b.checkin_code,
       b.created_at
-    FROM "Bookings" b
-    JOIN "Workspaces" w ON b.workspace_id = w.id
-    JOIN "Users" u ON b.seeker_id = u.id
+    FROM bookings b
+    JOIN workspaces w ON b.workspace_id = w.id
+    JOIN users u ON b.seeker_id = u.id
   `;
 
   const values = [];
@@ -116,7 +117,7 @@ export const findAllBookingsAdmin = async (statusFilter) => {
  */
 export const executeManualRefund = async (bookingId, refundAmount, commissionAmount) => {
   const query = `
-    INSERT INTO "Transactions" (booking_id, amount, commission_amount, type, status)
+    INSERT INTO transactions (booking_id, amount, commission_amount, type, status)
     VALUES ($1, $2, $3, 'refund', 'completed')
     RETURNING id, booking_id, amount, type, status, created_at;
   `;
@@ -139,8 +140,8 @@ export const findActiveDisputes = async () => {
       b.seeker_id,
       b.start_time,
       b.end_time
-    FROM "Disputes" d
-    JOIN "Bookings" b ON d.booking_id = b.id
+    FROM disputes d
+    JOIN bookings b ON d.booking_id = b.id
     WHERE d.status != 'resolved'
     ORDER BY d.created_at ASC;
   `;
@@ -153,7 +154,7 @@ export const findActiveDisputes = async () => {
  */
 export const resolveDisputeRecord = async (disputeId, resolution, adminUserId) => {
   const query = `
-    UPDATE "Disputes"
+    UPDATE disputes
     SET 
       status = 'resolved',
       resolution = $2,
@@ -171,10 +172,10 @@ export const resolveDisputeRecord = async (disputeId, resolution, adminUserId) =
 export const getPlatformAnalyticsMetrics = async () => {
   const query = `
     SELECT 
-      (SELECT COUNT(*) FROM "Bookings" WHERE status = 'completed') AS total_completed_bookings,
-      (SELECT COUNT(*) FROM "Workspaces" WHERE status = 'approved') AS total_active_listings,
-      (SELECT COALESCE(SUM(amount), 0) FROM "Transactions" WHERE type = 'payment' AND status = 'completed') AS gross_revenue,
-      (SELECT COALESCE(SUM(commission_amount), 0) FROM "Transactions" WHERE type = 'payment' AND status = 'completed') AS net_platform_commission,
+      (SELECT COUNT(*) FROM bookings WHERE status = 'completed') AS total_completed_bookings,
+      (SELECT COUNT(*) FROM workspaces WHERE status = 'admin_approved') AS total_active_listings,
+      (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'payment' AND status = 'completed') AS gross_revenue,
+      (SELECT COALESCE(SUM(commission_amount), 0) FROM transactions WHERE type = 'payment' AND status = 'completed') AS net_platform_commission,
       (
         SELECT ROUND(AVG(
           CASE 
@@ -183,7 +184,7 @@ export const getPlatformAnalyticsMetrics = async () => {
             ELSE 0.0
           END
         ), 2)
-        FROM "ReliabilityReviews"
+        FROM reviews
       ) AS avg_reliability_score;
   `;
   const res = await pool.query(query);
