@@ -17,6 +17,7 @@ export const getPendingHostVerifications = async () => {
 };
 
 /* Approve or reject a host profile verification request */
+/* Approve or reject a host profile verification request */
 export const reviewHostVerification = async (userId, status) => {
   const validStatuses = ["approved", "rejected"];
   if (!validStatuses.includes(status)) {
@@ -25,7 +26,8 @@ export const reviewHostVerification = async (userId, status) => {
     throw error;
   }
 
-  const updatedHost = await updateHostVerificationStatus(userId, status);
+  const dbStatus = status === "approved" ? "verified" : "rejected";
+  const updatedHost = await updateHostVerificationStatus(userId, dbStatus);
   if (!updatedHost) {
     const error = new Error("Host profile not found or already processed.");
     error.statusCode = 404;
@@ -49,7 +51,8 @@ export const moderateWorkspace = async (workspaceId, status) => {
     throw error;
   }
 
-  const updatedWorkspace = await updateWorkspaceStatus(workspaceId, status);
+  const dbStatus = status === "approved" ? "admin_approved" : status;
+  const updatedWorkspace = await updateWorkspaceStatus(workspaceId, dbStatus);
   if (!updatedWorkspace) {
     const error = new Error("Workspace listing not found.");
     error.statusCode = 404;

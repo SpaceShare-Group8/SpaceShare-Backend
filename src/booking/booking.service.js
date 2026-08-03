@@ -379,6 +379,59 @@ export const getBookingById = async (bookingId, userId, role) => {
   return booking;
 };
 
+/**
+ * Host marks an in-progress session as completed.
+ * This is what unlocks the seeker's ability to leave a review.
+ * PATCH /api/bookings/:id/complete
+ */
+export const completeBookingSession = async (bookingId, userId, role = 'host') => {
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const bookingQuery = `
+      SELECT b.id, b.status, hp.user_id AS host_user_id
+      FROM bookings b
+      JOIN workspaces w ON b.workspace_id = w.id
+      JOIN host_profiles hp ON w.host_id = hp.id
+      WHERE b.id = $1
+      FOR UPDATE;
+    `;
+    const bookingRes = await client.query(bookingQuery, [bookingId]);
+
+    if (bookingRes.rows.length === 0) {
+      throw new Error('Booking not found.');
+    }
+
+    const booking = bookingRes.rows[0];
+
+    if (role !== 'admin' && booking.host_user_id !== userId) {
+      throw new Error('Unauthorized: You are not authorized to complete this session.');
+    }
+
+    if (booking.status !== 'in_progress') {
+      throw new Error(`Invalid session state: Booking status is '${booking.status}'. Must be 'in_progress' to complete.`);
+    }
+
+    const updateQuery = `
+      UPDATE bookings
+      SET status = 'completed', updated_at = NOW()
+      WHERE id = $1
+      RETURNING *;
+    `;
+    const updateRes = await client.query(updateQuery, [bookingId]);
+
+    await client.query('COMMIT');
+    return updateRes.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 // ================================================================
 // GET USER BOOKINGS (Booking History)
 // ================================================================

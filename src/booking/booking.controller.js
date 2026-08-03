@@ -6,7 +6,7 @@
  */
 
 import * as bookingService from './booking.service.js';
-
+import { submitBookingReview } from './review.service.js';
 /**
  * Create a new booking (Instant or Request-to-Book)
  * POST /api/bookings
@@ -255,6 +255,65 @@ export const checkIn = async (req, res, next) => {
         status: 'error',
         message: error.message,
       });
+    }
+    next(error);
+  }
+};
+
+
+/**
+ * Seeker submits a post-booking review (feeds the reliability score)
+ * POST /api/bookings/:id/review
+ */
+export const submitReview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.user.id;
+
+    const { review, reliability } = await submitBookingReview(id, reviewerId, req.body);
+
+    return res.status(201).json({
+      status: 'success',
+      message: 'Review submitted successfully',
+      data: { review, reliability },
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        status: 'error',
+        message: error.message,
+      });
+    }
+    next(error);
+  }
+};
+
+/**
+ * Host marks the session as completed -> unlocks review submission
+ * PATCH /api/bookings/:id/complete
+ */
+export const completeSession = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const role = req.user.role;
+
+    const booking = await bookingService.completeBookingSession(id, userId, role);
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Session marked as completed. The seeker can now leave a review.',
+      data: { booking },
+    });
+  } catch (error) {
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({ status: 'error', message: error.message });
+    }
+    if (error.message.includes('not found')) {
+      return res.status(404).json({ status: 'error', message: error.message });
+    }
+    if (error.message.includes('Invalid session state')) {
+      return res.status(400).json({ status: 'error', message: error.message });
     }
     next(error);
   }

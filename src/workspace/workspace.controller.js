@@ -13,7 +13,9 @@ import {
   getWorkspaceHostUserId,
   notifyHost,
   getWorkspaceAvailability,
-  findMePowerNow,
+  listWorkspacePhotos,       
+  getWorkspacePhotoById,     
+  deleteWorkspacePhotoRecord,
 } from './workspace.service.js';
 
 // Load environment variables
@@ -380,45 +382,87 @@ export async function handleGetWorkspaceAvailability(req, res) {
   }
 }
 
-export async function handleFindMePowerNow(req, res) {
+/**
+ * GET /api/workspaces/:id/photos
+ */
+export async function handleListWorkspacePhotos(req, res) {
   try {
-    const {
-      latitude,
-      longitude,
-      radius = 10,
-    } = req.query;
+    const { id } = req.params;
 
-    if (!latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        message: "latitude and longitude are required.",
-      });
-    }
-
-    const workspace = await findMePowerNow({
-      latitude: Number(latitude),
-      longitude: Number(longitude),
-      radius: Number(radius),
-    });
-
+    const workspace = await getWorkspaceById(id);
     if (!workspace) {
       return res.status(404).json({
-        success: false,
-        message: "No nearby workspace found.",
+        status: false,
+        message: 'Workspace not found',
       });
     }
 
+    const photos = await listWorkspacePhotos(id);
+
     return res.status(200).json({
-      success: true,
-      data: workspace,
+      status: true,
+      data: photos,
     });
-
-  } catch (error) {
-    console.error(error);
-
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({
-      success: false,
-      message: "Unable to locate nearby workspace.",
+      status: false,
+      message: 'Failed to fetch workspace photos',
+    });
+  }
+}
+
+/**
+ * DELETE /api/workspaces/:workspaceId/photos/:photoId
+ */
+export async function handleDeleteWorkspacePhoto(req, res) {
+  try {
+    const { workspaceId, photoId } = req.params;
+
+    const photo = await getWorkspacePhotoById(photoId, workspaceId);
+    if (!photo) {
+      return res.status(404).json({
+        status: false,
+        message: 'Photo not found for this workspace',
+      });
+    }
+
+    const hostUserId = await getWorkspaceHostUserId(workspaceId);
+    const isOwner = hostUserId && hostUserId === req.user?.id;
+    const isAdmin = req.user?.role === 'admin' || req.user?.role === 'platform_admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        status: false,
+        message: 'You do not have permission to delete this photo',
+      });
+    }
+
+    if (photo.cloudinary_public_id) {
+      try {
+        await cloudinary.uploader.destroy(photo.cloudinary_public_id);
+      } catch (cloudErr) {
+        // Don't block DB cleanup if Cloudinary is briefly unavailable
+        console.error('⚠️ Cloudinary deletion failed (continuing to remove DB record):', cloudErr.message);
+      }
+    }
+
+    await deleteWorkspacePhotoRecord(photoId, workspaceId);
+
+    const photoCount = await countWorkspacePhotos(workspaceId);
+    await updateWorkspaceMediaStatus(workspaceId, photoCount >= 3 ? 'complete' : 'incomplete');
+
+    return res.status(200).json({
+      status: true,
+      message: 'Photo deleted successfully',
+      photos_remaining: photoCount,
+      media_status: photoCount >= 3 ? 'complete' : 'incomplete',
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      status: false,
+      message: 'Failed to delete photo',
     });
   }
 }

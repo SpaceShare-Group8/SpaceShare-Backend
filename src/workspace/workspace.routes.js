@@ -14,6 +14,8 @@ import {
   handleDeleteWorkspace,
   handleUploadWorkspacePhoto,
   handleUpdateWorkspaceStatus,
+  handleListWorkspacePhotos,   
+  handleDeleteWorkspacePhoto,
   handleFindMePowerNow,
 } from "./workspace.controller.js";
 
@@ -47,5 +49,9 @@ router.patch(
 
 /* Availability routes */
 router.use("/", availabilityRoutes);
+router.post("/:id/photos", upload.single("photo"), handleUploadWorkspacePhoto);
 
+
+router.get("/:id/photos", handleListWorkspacePhotos);
+router.delete("/:workspaceId/photos/:photoId", protect, handleDeleteWorkspacePhoto);
 export default router;
