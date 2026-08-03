@@ -16,6 +16,7 @@ import {
   listWorkspacePhotos,       
   getWorkspacePhotoById,     
   deleteWorkspacePhotoRecord,
+  findMePowerNow,
 } from './workspace.service.js';
 
 // Load environment variables
@@ -463,6 +464,49 @@ export async function handleDeleteWorkspacePhoto(req, res) {
     return res.status(500).json({
       status: false,
       message: 'Failed to delete photo',
+    });
+  }
+}
+
+export async function handleFindMePowerNow(req, res) {
+  try {
+    const {
+      latitude,
+      longitude,
+      radius = 10,
+    } = req.query;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: "latitude and longitude are required.",
+      });
+    }
+
+    const workspace = await findMePowerNow({
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      radius: Number(radius),
+    });
+
+    if (!workspace) {
+      return res.status(404).json({
+        success: false,
+        message: "No nearby workspace found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: workspace,
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to locate nearby workspace.",
     });
   }
 }
