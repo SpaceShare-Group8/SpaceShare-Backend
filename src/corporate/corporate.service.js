@@ -8,8 +8,13 @@ import {
   updateCorporateBudget,
   getCorporateSpendInPeriod,
   getCorporateUsageReport,
+  activateCorporateEmployee,
+  setUserRoleToCorporateEmployeeIfSeeker,
 } from "./corporate.repository.js";
-import { generateEmployeeInviteToken } from "../common/utils/jwt.js";
+import {
+  generateEmployeeInviteToken,
+  verifyEmployeeInviteToken,
+} from "../common/utils/jwt.js";
 
 /**
  * Provision Corporate Account
@@ -98,6 +103,73 @@ export const dispatchEmployeeInvite = async (adminUserId, employeeEmail, baseUrl
     invite_link: inviteLink,
     invite_token: token,
     invite_record: inviteRecord,
+  };
+};
+
+/**
+ * Accept a Corporate Employee Invitation
+ *
+ * Called when a user clicks the invite link sent by dispatchEmployeeInvite().
+ * The token itself is the proof of authorization here — that's why this
+ * is exposed as a public route (no login required to hit it). We still
+ * need the invited person to already have a SpaceShare account, since
+ * we're granting a role to an existing user record, not creating one.
+ */
+export const acceptEmployeeInvite = async (token) => {
+  if (!token) {
+    const error = new Error("Invite token is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let payload;
+  try {
+    payload = verifyEmployeeInviteToken(token);
+  } catch (err) {
+    const error = new Error("This invite link is invalid or has expired.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { email, corporate_account_id } = payload;
+
+  const corporateAccount = await findCorporateAccountById(corporate_account_id);
+  if (!corporateAccount) {
+    const error = new Error("This invite's corporate account no longer exists.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const user = await findUserByEmail(email);
+  if (!user) {
+    const error = new Error(
+      "No SpaceShare account found for this email yet. Please register first, then use the invite link again."
+    );
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Idempotent: activateCorporateEmployee upserts to 'active' whether an
+  // 'invited' row already exists or not, so clicking the link twice is
+  // harmless rather than an error.
+  const employeeRecord = await activateCorporateEmployee(corporateAccount.id, user.id);
+
+  // Only upgrades the role if the user is still a plain 'seeker' — see
+  // the function's own comment for why we don't overwrite an existing
+  // host/admin/corporate_admin role.
+  const roleUpdate = await setUserRoleToCorporateEmployeeIfSeeker(user.id);
+
+  return {
+    corporate_account_id: corporateAccount.id,
+    company_name: corporateAccount.company_name,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: roleUpdate ? roleUpdate.role : user.role,
+    },
+    role_upgraded: Boolean(roleUpdate),
+    employee_status: employeeRecord.status,
+    accepted_at: employeeRecord.accepted_at,
   };
 };
 

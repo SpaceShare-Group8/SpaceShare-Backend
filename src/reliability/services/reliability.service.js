@@ -1,114 +1,68 @@
 import pool from '../../common/config/db.js';
 
-const RELIABILITY_FLAG_THRESHOLD = parseFloat(process.env.RELIABILITY_FLAG_THRESHOLD || '50');
-const MIN_REVIEWS_FOR_FLAGGING = parseInt(process.env.RELIABILITY_MIN_REVIEWS || '5', 10);
+// PRD acceptance criterion: "Given a listing has fewer than 5 completed
+// bookings, then it is labelled 'New listing — limited reliability data'
+// instead of showing a potentially misleading score." Without this gate,
+// a brand-new listing with zero reviews would show a reliability score
+// of 0 — indistinguishable from a listing that's been reviewed and
+// found unreliable, which is exactly the misleading outcome the PRD
+// calls out.
+const MIN_COMPLETED_BOOKINGS_FOR_SCORE = 5;
 
 /**
- * Recalculate a workspace's reliability score from Tier 2
- * community-verified reviews (power_stable + internet_as_described)
- * and persist it on the workspace record.
- * PRD Section 10.3
+ * Computes a workspace's community-verified reliability score.
+ * Score = average of (power_stable, internet_as_described) across all
+ * reliability_reviews tied to that workspace's bookings, expressed as a
+ * percentage (0-100).
  */
-export async function recalculateWorkspaceReliability(workspaceId) {
-  const scoreResult = await pool.query(
-    `SELECT
-       ROUND(AVG(
-         CASE
-           WHEN r.power_stable = true AND r.internet_as_described = true THEN 100.0
-           WHEN r.power_stable = true OR r.internet_as_described = true THEN 50.0
-           ELSE 0.0
-         END
-       ), 2) AS avg_score,
-       COUNT(*)::int AS review_count
-     FROM reviews r
-     JOIN bookings b ON b.id = r.booking_id
-     WHERE b.workspace_id = $1
-       AND r.power_stable IS NOT NULL
-       AND r.internet_as_described IS NOT NULL`,
-    [workspaceId]
-  );
+export async function getWorkspaceReliabilityScore(workspaceId) {
+    const workspaceCheck = await pool.query('SELECT id FROM workspaces WHERE id = $1', [workspaceId]);
+    if (workspaceCheck.rows.length === 0) {
+        const error = new Error('Workspace not found');
+        error.statusCode = 404;
+        throw error;
+    }
 
-  const { avg_score, review_count } = scoreResult.rows[0];
-  const reliabilityScore = avg_score !== null ? parseFloat(avg_score) : 0;
-
-  await pool.query(
-    `UPDATE workspaces
-     SET reliability_score = $1, review_count = $2, updated_at = NOW()
-     WHERE id = $3`,
-    [reliabilityScore, review_count, workspaceId]
-  );
-
-  const flagResult = await checkAndFlagWorkspace(workspaceId, reliabilityScore, review_count);
-
-  return {
-    workspaceId,
-    reliabilityScore,
-    reviewCount: review_count,
-    ...flagResult,
-  };
-}
-
-/**
- * Auto-flag (or auto-clear) a workspace for Admin review based on
- * its current reliability score. PRD Section 11.4a / 11.15
- */
-export async function checkAndFlagWorkspace(workspaceId, score, reviewCount) {
-  const workspaceResult = await pool.query(
-    `SELECT flagged_for_review, title FROM workspaces WHERE id = $1`,
-    [workspaceId]
-  );
-  const workspace = workspaceResult.rows[0];
-  if (!workspace) return { flagged: false };
-
-  const shouldFlag = reviewCount >= MIN_REVIEWS_FOR_FLAGGING && score < RELIABILITY_FLAG_THRESHOLD;
-
-  // Newly drops below threshold -> flag it
-  if (shouldFlag && !workspace.flagged_for_review) {
-    const reason = `Reliability score (${score}) dropped below the ${RELIABILITY_FLAG_THRESHOLD} threshold across ${reviewCount} reviews.`;
-
-    await pool.query(
-      `UPDATE workspaces
-       SET flagged_for_review = TRUE, flagged_at = NOW(), flag_reason = $1
-       WHERE id = $2`,
-      [reason, workspaceId]
+    const result = await pool.query(
+        `WITH stats AS (
+            SELECT COUNT(*) FILTER (WHERE b.status = 'completed') AS completed_bookings_count
+            FROM bookings b
+            WHERE b.workspace_id = $1
+        ),
+        reviews AS (
+            SELECT
+                COUNT(*) AS review_count,
+                COALESCE(AVG(
+                    (CASE WHEN rr.power_stable THEN 1 ELSE 0 END +
+                     CASE WHEN rr.internet_as_described THEN 1 ELSE 0 END) / 2.0
+                ) * 100, 0) AS reliability_score
+            FROM bookings b
+            JOIN reliability_reviews rr ON rr.booking_id = b.id
+            WHERE b.workspace_id = $1
+        )
+        SELECT * FROM stats, reviews`,
+        [workspaceId]
     );
 
-    await notifyAdminsOfFlag(workspaceId, workspace.title, reason);
+    const row = result.rows[0];
+    const completedBookingsCount = Number(row.completed_bookings_count);
+    const reviewCount = Number(row.review_count);
 
-    return { flagged: true, flagReason: reason };
-  }
+    if (completedBookingsCount < MIN_COMPLETED_BOOKINGS_FOR_SCORE) {
+        return {
+            workspace_id: workspaceId,
+            completed_bookings_count: completedBookingsCount,
+            review_count: reviewCount,
+            reliability_score: null,
+            label: 'New listing — limited reliability data',
+        };
+    }
 
-  // Recovered above threshold -> auto-clear the flag
-  if (!shouldFlag && workspace.flagged_for_review) {
-    await pool.query(
-      `UPDATE workspaces
-       SET flagged_for_review = FALSE, flagged_at = NULL, flag_reason = NULL
-       WHERE id = $1`,
-      [workspaceId]
-    );
-    return { flagged: false, unflagged: true };
-  }
-
-  return { flagged: workspace.flagged_for_review };
-}
-
-async function notifyAdminsOfFlag(workspaceId, workspaceTitle, reason) {
-  const adminsResult = await pool.query(
-    `SELECT id FROM users WHERE role IN ('admin', 'platform_admin')`
-  );
-
-  await Promise.all(
-    adminsResult.rows.map((admin) =>
-      pool.query(
-        `INSERT INTO notifications (user_id, title, message, type, payload)
-         VALUES ($1, $2, $3, 'system', $4)`,
-        [
-          admin.id,
-          'Listing flagged for reliability review',
-          `"${workspaceTitle}" was auto-flagged: ${reason}`,
-          JSON.stringify({ workspaceId, reason }),
-        ]
-      )
-    )
-  );
+    return {
+        workspace_id: workspaceId,
+        completed_bookings_count: completedBookingsCount,
+        review_count: reviewCount,
+        reliability_score: Math.round(Number(row.reliability_score) * 10) / 10,
+        label: null,
+    };
 }

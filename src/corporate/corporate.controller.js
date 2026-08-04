@@ -2,6 +2,7 @@
 import {
   provisionCorporateAccount,
   dispatchEmployeeInvite,
+  acceptEmployeeInvite,
   updateBudget,
   fetchUsageReport,
 } from "./corporate.service.js";
@@ -79,6 +80,32 @@ export const updateCorporateBudget = async (req, res) => {
  * POST /api/corporate/employees
  * Dispatch an Employee Invitation Token Link
  */
+/*
+ * GET /api/corporate/accept-invite?token=...
+ * Public route — the invite token itself is the authorization.
+ * Validates the token, upgrades the user's role to corporate_employee
+ * (if eligible), and activates their CorporateEmployees record.
+ */
+export const acceptInvite = async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    const result = await acceptEmployeeInvite(token);
+
+    return res.status(200).json({
+      success: true,
+      message: "Invitation accepted successfully. You now have corporate employee access.",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error in acceptInvite controller:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to accept corporate invitation.",
+    });
+  }
+};
+
 export const inviteEmployee = async (req, res) => {
   try {
     const { email } = req.body;
