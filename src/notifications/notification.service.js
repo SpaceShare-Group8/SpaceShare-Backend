@@ -9,6 +9,21 @@
 /**
  * Generic notification sender
  */
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const transporter = nodemailer.createTransport({
+  host: process.env.BREVO_HOST,
+  port: Number(process.env.BREVO_PORT),
+  secure: false,
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASS,
+  },
+});
+
 export const sendNotification = async ({
   type,
   recipient,
@@ -32,12 +47,28 @@ export const sendNotification = async ({
  * Email notification
  */
 export const sendEmail = async (recipient, subject, message) => {
-  return sendNotification({
-    type: "EMAIL",
-    recipient,
-    subject,
-    message,
-  });
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: recipient,
+      subject,
+      text: message,
+    });
+
+    console.log(`📧 Email sent to ${recipient}`);
+
+    return {
+      success: true,
+      message: "Email sent successfully.",
+    };
+  } catch (error) {
+    console.error(" Email sending failed:", error.message);
+
+    return {
+      success: false,
+      message: error.message,
+    };
+  }
 };
 
 /**

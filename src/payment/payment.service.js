@@ -4,9 +4,10 @@
 // PRD Section 11.8 - Payments
 // ================================================================
 
-import axios from 'axios';
-import crypto from 'crypto';
-import pool from '../common/config/db.js';
+import axios from "axios";
+import crypto from "crypto";
+import pool from "../common/config/db.js";
+import { sendEmail } from "../notification/notification.service.js";
 import {
   PAYMENT_PROVIDERS,
   DEFAULT_PROVIDER,
@@ -14,11 +15,11 @@ import {
   BOOKING_STATUS,
   CURRENCY,
   calculateCommission,
-  getProviderConfig
-} from './payment.constants.js';
+  getProviderConfig,
+} from "./payment.constants.js";
 
 // ✅ Import wallet service for payout scheduling (PRD Section 10.8, 11.8)
-import { scheduleHostPayout } from '../wallet/wallet.service.js';
+import { scheduleHostPayout } from "../wallet/wallet.service.js";
 
 // ================================================================
 // HELPER FUNCTIONS
@@ -27,13 +28,35 @@ import { scheduleHostPayout } from '../wallet/wallet.service.js';
 /**
  * Create a notification record (PRD Section 10.9)
  */
-const createNotification = async (userId, type, title, message, metadata = {}) => {
+const createNotification = async (
+  userId,
+  type,
+  title,
+  message,
+  metadata = {},
+) => {
   const query = `
     INSERT INTO notifications (user_id, type, title, message, metadata, created_at)
     VALUES ($1, $2, $3, $4, $5, NOW())
     RETURNING id
   `;
-  const result = await pool.query(query, [userId, type, title, message, JSON.stringify(metadata)]);
+  const result = await pool.query(query, [
+    userId,
+    type,
+    title,
+    message,
+    JSON.stringify(metadata),
+  ]);
+  const userResult = await pool.query(`SELECT email FROM users WHERE id = $1`, [
+    userId,
+  ]);
+  if (userResult.rows.length > 0) {
+    try {
+      await sendEmail(userResult.rows[0].email, title, message);
+    } catch (err) {
+      console.error("Email failed:", err.message);
+    }
+  }
   return result.rows[0];
 };
 
@@ -47,26 +70,26 @@ const calculatePartialRefund = async (bookingId) => {
     WHERE id = $1
   `;
   const result = await pool.query(bookingQuery, [bookingId]);
-  
+
   if (result.rows.length === 0) {
-    throw new Error('Booking not found');
+    throw new Error("Booking not found");
   }
-  
+
   const booking = result.rows[0];
   const now = new Date();
   const startTime = new Date(booking.start_time);
   const hoursUntilStart = (startTime - now) / (1000 * 60 * 60);
-  
+
   // PRD Section 17.3: Cancellation policy
   // - 2+ hours before: full refund minus 10% processing fee
   // - Less than 2 hours: no refund
   // - No-show: no refund
-  
+
   if (hoursUntilStart >= 2) {
     // Full refund minus 10% processing fee
     return parseFloat(booking.total_amount) * 0.9;
   }
-  
+
   return 0; // No refund for late cancellation
 };
 
@@ -93,25 +116,25 @@ const checkCorporateBudget = async (corporateAccountId, amount) => {
     WHERE id = $1
   `;
   const accountResult = await pool.query(accountQuery, [corporateAccountId]);
-  
+
   if (accountResult.rows.length === 0) {
     return { allowed: true }; // No budget set = unlimited
   }
-  
+
   const account = accountResult.rows[0];
   const budgetAmount = parseFloat(account.budget_amount);
-  
+
   if (!budgetAmount || budgetAmount === 0) {
     return { allowed: true };
   }
-  
+
   // Calculate period start date
   const now = new Date();
   let startDate;
-  
-  if (account.budget_period === 'monthly') {
+
+  if (account.budget_period === "monthly") {
     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  } else if (account.budget_period === 'weekly') {
+  } else if (account.budget_period === "weekly") {
     const day = now.getDay();
     const diff = now.getDate() - day + (day === 0 ? -6 : 1);
     startDate = new Date(now);
@@ -119,7 +142,7 @@ const checkCorporateBudget = async (corporateAccountId, amount) => {
   } else {
     startDate = new Date(now.getFullYear(), 0, 1);
   }
-  
+
   // Get current spend
   const spendQuery = `
     SELECT COALESCE(SUM(total_amount), 0) AS total_spent
@@ -128,17 +151,20 @@ const checkCorporateBudget = async (corporateAccountId, amount) => {
       AND status IN ('confirmed', 'in_progress', 'completed')
       AND created_at >= $2
   `;
-  const spendResult = await pool.query(spendQuery, [corporateAccountId, startDate]);
+  const spendResult = await pool.query(spendQuery, [
+    corporateAccountId,
+    startDate,
+  ]);
   const currentSpend = parseFloat(spendResult.rows[0].total_spent);
   const projectedSpend = currentSpend + parseFloat(amount);
-  
+
   if (projectedSpend > budgetAmount) {
     return {
       allowed: false,
-      reason: `Budget exceeded. Available: ₦${(budgetAmount - currentSpend).toFixed(2)}, Required: ₦${amount}`
+      reason: `Budget exceeded. Available: ₦${(budgetAmount - currentSpend).toFixed(2)}, Required: ₦${amount}`,
     };
   }
-  
+
   return { allowed: true };
 };
 
@@ -147,14 +173,14 @@ const checkCorporateBudget = async (corporateAccountId, amount) => {
  */
 const generateCheckinCode = async (client) => {
   let isUnique = false;
-  let code = '';
+  let code = "";
   let attempts = 0;
   const maxAttempts = 10;
-  
+
   while (!isUnique && attempts < maxAttempts) {
     code = crypto.randomInt(100000, 999999).toString();
     attempts++;
-    
+
     const checkQuery = `
       SELECT id FROM bookings 
       WHERE checkin_code = $1 
@@ -162,16 +188,16 @@ const generateCheckinCode = async (client) => {
       LIMIT 1
     `;
     const res = await client.query(checkQuery, [code]);
-    
+
     if (res.rows.length === 0) {
       isUnique = true;
     }
   }
-  
+
   if (!isUnique) {
-    throw new Error('Failed to generate unique check-in code');
+    throw new Error("Failed to generate unique check-in code");
   }
-  
+
   return code;
 };
 
@@ -216,7 +242,7 @@ const logAdminAction = async (client, adminId, action, details) => {
  */
 export const initializePaystackTransaction = async (data) => {
   const config = getProviderConfig(PAYMENT_PROVIDERS.PAYSTACK);
-  
+
   const payload = {
     email: data.email,
     amount: Math.round(data.amount * 100), // Paystack uses kobo (multiply by 100)
@@ -228,8 +254,8 @@ export const initializePaystackTransaction = async (data) => {
       workspace_id: data.metadata?.workspace_id,
       user_id: data.metadata?.user_id,
       cancel_action: data.metadata?.cancel_action,
-      custom_fields: data.metadata?.custom_fields || []
-    }
+      custom_fields: data.metadata?.custom_fields || [],
+    },
   };
 
   try {
@@ -238,10 +264,10 @@ export const initializePaystackTransaction = async (data) => {
       payload,
       {
         headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
+          Authorization: `Bearer ${config.secretKey}`,
+          "Content-Type": "application/json",
+        },
+      },
     );
 
     if (response.data.status) {
@@ -249,14 +275,21 @@ export const initializePaystackTransaction = async (data) => {
         success: true,
         authorization_url: response.data.data.authorization_url,
         access_code: response.data.data.access_code,
-        reference: response.data.data.reference
+        reference: response.data.data.reference,
       };
     } else {
-      throw new Error(response.data.message || 'Paystack initialization failed');
+      throw new Error(
+        response.data.message || "Paystack initialization failed",
+      );
     }
   } catch (error) {
-    console.error('❌ Paystack initialization error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Payment initialization failed');
+    console.error(
+      "❌ Paystack initialization error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Payment initialization failed",
+    );
   }
 };
 
@@ -273,10 +306,10 @@ export const verifyPaystackTransaction = async (reference) => {
       `${config.baseUrl}/transaction/verify/${reference}`,
       {
         headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
+          Authorization: `Bearer ${config.secretKey}`,
+          "Content-Type": "application/json",
+        },
+      },
     );
 
     if (response.data.status) {
@@ -289,14 +322,21 @@ export const verifyPaystackTransaction = async (reference) => {
         metadata: data.metadata,
         transaction_date: data.transaction_date,
         gateway_response: data.gateway_response,
-        channel: data.channel
+        channel: data.channel,
       };
     } else {
-      throw new Error(response.data.message || 'Transaction verification failed');
+      throw new Error(
+        response.data.message || "Transaction verification failed",
+      );
     }
   } catch (error) {
-    console.error('❌ Paystack verification error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Transaction verification failed');
+    console.error(
+      "❌ Paystack verification error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Transaction verification failed",
+    );
   }
 };
 
@@ -311,33 +351,34 @@ export const refundPaystackTransaction = async (data) => {
   const payload = {
     transaction: data.transactionId,
     amount: Math.round(data.amount * 100), // Convert to kobo
-    currency: CURRENCY
+    currency: CURRENCY,
   };
 
   try {
-    const response = await axios.post(
-      `${config.baseUrl}/refund`,
-      payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    const response = await axios.post(`${config.baseUrl}/refund`, payload, {
+      headers: {
+        Authorization: `Bearer ${config.secretKey}`,
+        "Content-Type": "application/json",
+      },
+    });
 
     if (response.data.status) {
       return {
         success: true,
         status: response.data.data.status,
-        refund_id: response.data.data.id
+        refund_id: response.data.data.id,
       };
     } else {
-      throw new Error(response.data.message || 'Refund failed');
+      throw new Error(response.data.message || "Refund failed");
     }
   } catch (error) {
-    console.error('❌ Paystack refund error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Refund processing failed');
+    console.error(
+      "❌ Paystack refund error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Refund processing failed",
+    );
   }
 };
 
@@ -358,49 +399,52 @@ export const initializeFlutterwaveTransaction = async (data) => {
     amount: data.amount,
     currency: CURRENCY,
     redirect_url: data.callbackUrl || config.callbackUrl,
-    payment_options: 'card,ussd,banktransfer',
+    payment_options: "card,ussd,banktransfer",
     customer: {
       email: data.email,
-      name: data.customer?.name || 'Customer',
-      phonenumber: data.customer?.phone || ''
+      name: data.customer?.name || "Customer",
+      phonenumber: data.customer?.phone || "",
     },
     customizations: {
-      title: 'SpaceShare Booking Payment',
-      description: `Booking for workspace ${data.metadata?.workspace_id || ''}`,
-      logo: process.env.APP_LOGO_URL || ''
+      title: "SpaceShare Booking Payment",
+      description: `Booking for workspace ${data.metadata?.workspace_id || ""}`,
+      logo: process.env.APP_LOGO_URL || "",
     },
     meta: {
       booking_id: data.metadata?.booking_id,
       workspace_id: data.metadata?.workspace_id,
-      user_id: data.metadata?.user_id
-    }
+      user_id: data.metadata?.user_id,
+    },
   };
 
   try {
-    const response = await axios.post(
-      `${config.baseUrl}/payments`,
-      payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    const response = await axios.post(`${config.baseUrl}/payments`, payload, {
+      headers: {
+        Authorization: `Bearer ${config.secretKey}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-    if (response.data.status === 'success') {
+    if (response.data.status === "success") {
       return {
         success: true,
         link: response.data.data.link,
         reference: response.data.data.tx_ref,
-        transaction_id: response.data.data.id
+        transaction_id: response.data.data.id,
       };
     } else {
-      throw new Error(response.data.message || 'Flutterwave initialization failed');
+      throw new Error(
+        response.data.message || "Flutterwave initialization failed",
+      );
     }
   } catch (error) {
-    console.error('❌ Flutterwave initialization error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Payment initialization failed');
+    console.error(
+      "❌ Flutterwave initialization error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Payment initialization failed",
+    );
   }
 };
 
@@ -410,7 +454,10 @@ export const initializeFlutterwaveTransaction = async (data) => {
  * @param {string} reference - Transaction reference
  * @returns {object} - { status, amount, metadata, transaction_date }
  */
-export const verifyFlutterwaveTransaction = async (transactionId, reference) => {
+export const verifyFlutterwaveTransaction = async (
+  transactionId,
+  reference,
+) => {
   const config = getProviderConfig(PAYMENT_PROVIDERS.FLUTTERWAVE);
 
   try {
@@ -418,13 +465,13 @@ export const verifyFlutterwaveTransaction = async (transactionId, reference) => 
       `${config.baseUrl}/transactions/${transactionId}/verify`,
       {
         headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
+          Authorization: `Bearer ${config.secretKey}`,
+          "Content-Type": "application/json",
+        },
+      },
     );
 
-    if (response.data.status === 'success') {
+    if (response.data.status === "success") {
       const data = response.data.data;
       return {
         success: true,
@@ -434,14 +481,21 @@ export const verifyFlutterwaveTransaction = async (transactionId, reference) => 
         metadata: data.meta,
         transaction_date: data.created_at,
         gateway_response: data.status,
-        channel: data.payment_type
+        channel: data.payment_type,
       };
     } else {
-      throw new Error(response.data.message || 'Transaction verification failed');
+      throw new Error(
+        response.data.message || "Transaction verification failed",
+      );
     }
   } catch (error) {
-    console.error('❌ Flutterwave verification error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Transaction verification failed');
+    console.error(
+      "❌ Flutterwave verification error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Transaction verification failed",
+    );
   }
 };
 
@@ -455,7 +509,7 @@ export const refundFlutterwaveTransaction = async (data) => {
 
   const payload = {
     amount: data.amount,
-    reason: data.reason || 'Customer requested refund'
+    reason: data.reason || "Customer requested refund",
   };
 
   try {
@@ -464,24 +518,29 @@ export const refundFlutterwaveTransaction = async (data) => {
       payload,
       {
         headers: {
-          'Authorization': `Bearer ${config.secretKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
+          Authorization: `Bearer ${config.secretKey}`,
+          "Content-Type": "application/json",
+        },
+      },
     );
 
-    if (response.data.status === 'success') {
+    if (response.data.status === "success") {
       return {
         success: true,
         status: response.data.data.status,
-        refund_id: response.data.data.id
+        refund_id: response.data.data.id,
       };
     } else {
-      throw new Error(response.data.message || 'Refund failed');
+      throw new Error(response.data.message || "Refund failed");
     }
   } catch (error) {
-    console.error('❌ Flutterwave refund error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Refund processing failed');
+    console.error(
+      "❌ Flutterwave refund error:",
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Refund processing failed",
+    );
   }
 };
 
@@ -497,8 +556,11 @@ export const refundFlutterwaveTransaction = async (data) => {
  * @returns {boolean} - True if signature is valid
  */
 export const verifyPaystackWebhook = (signature, payload, secret) => {
-  const crypto = require('crypto');
-  const hash = crypto.createHmac('sha512', secret).update(payload).digest('hex');
+  const crypto = require("crypto");
+  const hash = crypto
+    .createHmac("sha512", secret)
+    .update(payload)
+    .digest("hex");
   return hash === signature;
 };
 
@@ -523,9 +585,9 @@ export const verifyFlutterwaveWebhook = (signature, secret, payload) => {
  * @param {string} prefix - Optional prefix (default: 'SPC')
  * @returns {string} - Unique reference (e.g., SPC-20260730-ABC123)
  */
-export const generatePaymentReference = (prefix = 'SPC') => {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const random = crypto.randomBytes(4).toString('hex').toUpperCase();
+export const generatePaymentReference = (prefix = "SPC") => {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const random = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `${prefix}-${date}-${random}`;
 };
 
@@ -535,7 +597,14 @@ export const generatePaymentReference = (prefix = 'SPC') => {
  * @returns {object} - { success, paymentUrl, reference, provider }
  */
 export const processPayment = async (data) => {
-  const { bookingId, userId, email, amount, provider = DEFAULT_PROVIDER, paymentMethod = 'card' } = data;
+  const {
+    bookingId,
+    userId,
+    email,
+    amount,
+    provider = DEFAULT_PROVIDER,
+    paymentMethod = "card",
+  } = data;
 
   // Validate booking exists and is in correct state
   const bookingQuery = `
@@ -549,19 +618,19 @@ export const processPayment = async (data) => {
   const bookingResult = await pool.query(bookingQuery, [bookingId, userId]);
 
   if (bookingResult.rows.length === 0) {
-    throw new Error('Booking not found or unauthorized');
+    throw new Error("Booking not found or unauthorized");
   }
 
   const booking = bookingResult.rows[0];
 
   // Check if already confirmed
-  if (booking.status === 'confirmed' || booking.status === 'in_progress') {
-    throw new Error('Booking is already confirmed');
+  if (booking.status === "confirmed" || booking.status === "in_progress") {
+    throw new Error("Booking is already confirmed");
   }
 
   // Validate amount matches
   if (parseFloat(booking.total_amount) !== parseFloat(amount)) {
-    throw new Error('Amount does not match booking total');
+    throw new Error("Amount does not match booking total");
   }
 
   // Check payment attempt limit (prevent abuse)
@@ -572,19 +641,26 @@ export const processPayment = async (data) => {
   `;
   const attemptResult = await pool.query(attemptQuery, [bookingId]);
   const attempts = parseInt(attemptResult.rows[0]?.payment_attempts || 0);
-  
+
   if (attempts >= 5) {
-    throw new Error('Maximum payment attempts exceeded. Please contact support.');
+    throw new Error(
+      "Maximum payment attempts exceeded. Please contact support.",
+    );
   }
 
   // Request-to-Book requires host approval first (PRD Section 10.5)
-  if (booking.mode === 'request' && booking.status === 'pending') {
-    throw new Error('This booking requires host approval before payment. Please wait for host confirmation.');
+  if (booking.mode === "request" && booking.status === "pending") {
+    throw new Error(
+      "This booking requires host approval before payment. Please wait for host confirmation.",
+    );
   }
 
   // Corporate budget check (PRD Section 10.10)
   if (booking.corporate_account_id) {
-    const budgetCheck = await checkCorporateBudget(booking.corporate_account_id, amount);
+    const budgetCheck = await checkCorporateBudget(
+      booking.corporate_account_id,
+      amount,
+    );
     if (!budgetCheck.allowed) {
       throw new Error(budgetCheck.reason);
     }
@@ -597,15 +673,15 @@ export const processPayment = async (data) => {
     WHERE workspace_id = $1
   `;
   const pricingResult = await pool.query(pricingQuery, [booking.workspace_id]);
-  
+
   if (pricingResult.rows.length > 0) {
     const pricing = pricingResult.rows[0];
     const startTime = new Date(booking.start_time);
     const endTime = new Date(booking.end_time);
     const durationHours = (endTime - startTime) / (1000 * 60 * 60);
-    
+
     let expectedAmount = null;
-    
+
     // Check if it's a weekly booking (>= 5 days)
     if (durationHours >= 120 && pricing.weekly_rate) {
       const weeks = Math.ceil(durationHours / 168);
@@ -620,9 +696,14 @@ export const processPayment = async (data) => {
     else if (pricing.hourly_rate) {
       expectedAmount = pricing.hourly_rate * Math.ceil(durationHours);
     }
-    
-    if (expectedAmount !== null && Math.abs(parseFloat(amount) - expectedAmount) > 0.01) {
-      throw new Error(`Amount mismatch. Expected: ₦${expectedAmount.toFixed(2)}, Received: ₦${amount}`);
+
+    if (
+      expectedAmount !== null &&
+      Math.abs(parseFloat(amount) - expectedAmount) > 0.01
+    ) {
+      throw new Error(
+        `Amount mismatch. Expected: ₦${expectedAmount.toFixed(2)}, Received: ₦${amount}`,
+      );
     }
   }
 
@@ -638,7 +719,7 @@ export const processPayment = async (data) => {
      SET payment_attempts = payment_attempts + 1, 
          last_payment_attempt = NOW() 
      WHERE id = $1`,
-    [bookingId]
+    [bookingId],
   );
 
   // Create transaction record with payment metadata
@@ -653,11 +734,11 @@ export const processPayment = async (data) => {
     bookingId,
     amount,
     commission,
-    'payment',
+    "payment",
     PAYMENT_STATUS.PENDING,
     reference,
     paymentMethod,
-    parseFloat(amount) * 0.015 // ~1.5% provider fee
+    parseFloat(amount) * 0.015, // ~1.5% provider fee
   ]);
 
   const transactionId = transactionResult.rows[0].id;
@@ -671,7 +752,7 @@ export const processPayment = async (data) => {
     booking_id: bookingId,
     workspace_id: booking.workspace_id,
     user_id: userId,
-    transaction_id: transactionId
+    transaction_id: transactionId,
   };
 
   try {
@@ -682,7 +763,7 @@ export const processPayment = async (data) => {
         reference,
         metadata,
         // Use FRONTEND_URL, not APP_URL (PRD Section 11.8)
-        callbackUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/callback`
+        callbackUrl: `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/callback`,
       });
     } else if (provider === PAYMENT_PROVIDERS.FLUTTERWAVE) {
       paymentResult = await initializeFlutterwaveTransaction({
@@ -691,7 +772,7 @@ export const processPayment = async (data) => {
         reference,
         metadata,
         // Use FRONTEND_URL, not APP_URL (PRD Section 11.8)
-        callbackUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/callback`
+        callbackUrl: `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/callback`,
       });
     } else {
       throw new Error(`Unsupported payment provider: ${provider}`);
@@ -700,10 +781,10 @@ export const processPayment = async (data) => {
     if (!paymentResult.success) {
       // Update transaction as failed
       await pool.query(
-        'UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2',
-        [PAYMENT_STATUS.FAILED, transactionId]
+        "UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2",
+        [PAYMENT_STATUS.FAILED, transactionId],
       );
-      throw new Error('Payment initialization failed');
+      throw new Error("Payment initialization failed");
     }
 
     // Store idempotency key
@@ -711,7 +792,7 @@ export const processPayment = async (data) => {
       `UPDATE transactions 
        SET payment_reference = $1, webhook_idempotency_key = $2, updated_at = NOW() 
        WHERE id = $3`,
-      [paymentResult.reference || reference, idempotencyKey, transactionId]
+      [paymentResult.reference || reference, idempotencyKey, transactionId],
     );
 
     return {
@@ -723,15 +804,14 @@ export const processPayment = async (data) => {
       bookingId: bookingId,
       amount: amount,
       commission: commission,
-      netAmount: netAmount
+      netAmount: netAmount,
     };
-
   } catch (error) {
-    console.error('❌ Payment processing error:', error.message);
+    console.error("❌ Payment processing error:", error.message);
     // Update transaction as failed
     await pool.query(
-      'UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2',
-      [PAYMENT_STATUS.FAILED, transactionId]
+      "UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2",
+      [PAYMENT_STATUS.FAILED, transactionId],
     );
     throw error;
   }
@@ -749,7 +829,7 @@ export const handlePaymentSuccess = async (data) => {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Find transaction by reference
     const transactionQuery = `
@@ -761,32 +841,36 @@ export const handlePaymentSuccess = async (data) => {
     const transactionResult = await client.query(transactionQuery, [reference]);
 
     if (transactionResult.rows.length === 0) {
-      throw new Error('Transaction not found');
+      throw new Error("Transaction not found");
     }
 
     const transaction = transactionResult.rows[0];
 
     // Check if already processed
     if (transaction.status === PAYMENT_STATUS.SUCCESSFUL) {
-      await client.query('COMMIT');
-      return { success: true, alreadyProcessed: true, bookingId: transaction.booking_id };
+      await client.query("COMMIT");
+      return {
+        success: true,
+        alreadyProcessed: true,
+        bookingId: transaction.booking_id,
+      };
     }
 
     // Check idempotency to prevent duplicate processing
     if (transaction.webhook_idempotency_key) {
       const idempotencyCheck = await client.query(
-        'SELECT id FROM transactions WHERE webhook_idempotency_key = $1 AND status = $2',
-        [transaction.webhook_idempotency_key, PAYMENT_STATUS.SUCCESSFUL]
+        "SELECT id FROM transactions WHERE webhook_idempotency_key = $1 AND status = $2",
+        [transaction.webhook_idempotency_key, PAYMENT_STATUS.SUCCESSFUL],
       );
       if (idempotencyCheck.rows.length > 0) {
-        await client.query('COMMIT');
+        await client.query("COMMIT");
         return { success: true, alreadyProcessed: true };
       }
     }
 
     // Verify amount matches
     if (parseFloat(transaction.amount) !== parseFloat(amount)) {
-      throw new Error('Amount mismatch');
+      throw new Error("Amount mismatch");
     }
 
     // Update transaction with webhook tracking
@@ -798,7 +882,7 @@ export const handlePaymentSuccess = async (data) => {
            last_webhook_attempt = NOW(),
            updated_at = NOW() 
        WHERE id = $3`,
-      [PAYMENT_STATUS.SUCCESSFUL, parseFloat(amount) * 0.015, transaction.id]
+      [PAYMENT_STATUS.SUCCESSFUL, parseFloat(amount) * 0.015, transaction.id],
     );
 
     // Generate check-in code for the booking
@@ -812,7 +896,7 @@ export const handlePaymentSuccess = async (data) => {
            updated_at = NOW() 
        WHERE id = $2
        RETURNING workspace_id, seeker_id`,
-      [checkinCode, transaction.booking_id]
+      [checkinCode, transaction.booking_id],
     );
 
     const booking = bookingUpdate.rows[0];
@@ -827,12 +911,14 @@ export const handlePaymentSuccess = async (data) => {
     const hostResult = await client.query(hostQuery, [booking.workspace_id]);
 
     if (hostResult.rows.length === 0) {
-      throw new Error('Workspace not found');
+      throw new Error("Workspace not found");
     }
 
     const hostId = hostResult.rows[0].host_id;
     const workspaceTitle = hostResult.rows[0].title;
-    const netAmount = parseFloat(transaction.amount) - parseFloat(transaction.commission_amount || 0);
+    const netAmount =
+      parseFloat(transaction.amount) -
+      parseFloat(transaction.commission_amount || 0);
 
     // Insert or update wallet
     await client.query(
@@ -842,7 +928,7 @@ export const handlePaymentSuccess = async (data) => {
        DO UPDATE SET 
          balance = wallets.balance + $2,
          updated_at = NOW()`,
-      [hostId, netAmount, CURRENCY]
+      [hostId, netAmount, CURRENCY],
     );
 
     // ✅ FIX: Schedule payout with 24-hour hold (PRD Section 10.8, 11.8)
@@ -851,7 +937,11 @@ export const handlePaymentSuccess = async (data) => {
     await scheduleHostPayout(client, hostId, transaction.booking_id, netAmount);
 
     // Create review request (PRD Section 10.3)
-    await createReviewRequest(client, transaction.booking_id, booking.seeker_id);
+    await createReviewRequest(
+      client,
+      transaction.booking_id,
+      booking.seeker_id,
+    );
 
     // Get seeker details for notifications
     const seekerQuery = `
@@ -868,61 +958,77 @@ export const handlePaymentSuccess = async (data) => {
       FROM bookings
       WHERE id = $1
     `;
-    const bookingDetailsResult = await client.query(bookingDetailsQuery, [transaction.booking_id]);
+    const bookingDetailsResult = await client.query(bookingDetailsQuery, [
+      transaction.booking_id,
+    ]);
     const bookingDetails = bookingDetailsResult.rows[0];
     const startTime = new Date(bookingDetails.start_time).toLocaleString();
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     // Trigger notifications (PRD Section 10.9)
     // Notification to seeker: Booking confirmed
     await createNotification(
       booking.seeker_id,
-      'booking_confirmed',
-      'Booking Confirmed! 🎉',
+      "booking_confirmed",
+      "Booking Confirmed! 🎉",
       `Your booking at "${workspaceTitle}" is confirmed. Check-in code: ${checkinCode}`,
-      { bookingId: transaction.booking_id, checkinCode, workspace: workspaceTitle }
+      {
+        bookingId: transaction.booking_id,
+        checkinCode,
+        workspace: workspaceTitle,
+      },
     );
 
     // Notification to host: New booking received
     await createNotification(
       hostId,
-      'new_booking',
-      'New Booking Received 📋',
+      "new_booking",
+      "New Booking Received 📋",
       `${seeker.full_name} has booked your space "${workspaceTitle}" for ${startTime}`,
-      { bookingId: transaction.booking_id, seeker: seeker.full_name, startTime }
+      {
+        bookingId: transaction.booking_id,
+        seeker: seeker.full_name,
+        startTime,
+      },
     );
 
     // Notification: Payment confirmed
     await createNotification(
       booking.seeker_id,
-      'payment_confirmed',
-      'Payment Confirmed ✅',
+      "payment_confirmed",
+      "Payment Confirmed ✅",
       `Your payment of ₦${transaction.amount} for "${workspaceTitle}" was successful.`,
-      { bookingId: transaction.booking_id, amount: transaction.amount }
+      { bookingId: transaction.booking_id, amount: transaction.amount },
     );
 
     // ✅ Notification: Payout scheduled (PRD Section 10.9)
     await createNotification(
       hostId,
-      'payout_scheduled',
-      'Payout Scheduled 💰',
+      "payout_scheduled",
+      "Payout Scheduled 💰",
       `Your payout of ₦${netAmount.toFixed(2)} for booking "${workspaceTitle}" has been scheduled and will be available in 24 hours.`,
-      { bookingId: transaction.booking_id, amount: netAmount, scheduledDate: new Date(Date.now() + 86400000).toISOString() }
+      {
+        bookingId: transaction.booking_id,
+        amount: netAmount,
+        scheduledDate: new Date(Date.now() + 86400000).toISOString(),
+      },
     );
 
     // Log system action (PRD Section 12)
-    await logSystemAction(client, 'payment_webhook_success', { 
-      bookingId: transaction.booking_id, 
+    await logSystemAction(client, "payment_webhook_success", {
+      bookingId: transaction.booking_id,
       amount: transaction.amount,
       provider,
       checkinCode,
       hostId,
-      netAmount
+      netAmount,
     });
 
     console.log(`✅ Payment successful for booking ${transaction.booking_id}`);
-    console.log(`💰 Payout of ₦${netAmount.toFixed(2)} scheduled for host ${hostId} (24-hour hold)`);
+    console.log(
+      `💰 Payout of ₦${netAmount.toFixed(2)} scheduled for host ${hostId} (24-hour hold)`,
+    );
 
     return {
       success: true,
@@ -930,12 +1036,11 @@ export const handlePaymentSuccess = async (data) => {
       transactionId: transaction.id,
       checkinCode,
       netAmount,
-      payoutScheduled: true
+      payoutScheduled: true,
     };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Payment success handling error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Payment success handling error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -953,7 +1058,7 @@ export const handlePaymentFailure = async (data) => {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Update transaction status with webhook tracking
     const result = await client.query(
@@ -964,7 +1069,7 @@ export const handlePaymentFailure = async (data) => {
            updated_at = NOW() 
        WHERE reference = $2 OR payment_reference = $2
        RETURNING booking_id`,
-      [PAYMENT_STATUS.FAILED, reference]
+      [PAYMENT_STATUS.FAILED, reference],
     );
 
     if (result.rows.length > 0) {
@@ -975,15 +1080,15 @@ export const handlePaymentFailure = async (data) => {
         `UPDATE bookings 
          SET status = 'payment_failed', updated_at = NOW() 
          WHERE id = $1`,
-        [bookingId]
+        [bookingId],
       );
 
       // Log the failure
-      await logSystemAction(client, 'payment_webhook_failure', { 
-        bookingId, 
-        provider, 
+      await logSystemAction(client, "payment_webhook_failure", {
+        bookingId,
+        provider,
         message,
-        reference
+        reference,
       });
 
       // Notify user of payment failure (PRD Section 10.9)
@@ -991,27 +1096,26 @@ export const handlePaymentFailure = async (data) => {
         SELECT seeker_id FROM bookings WHERE id = $1
       `;
       const seekerResult = await client.query(seekerQuery, [bookingId]);
-      
+
       if (seekerResult.rows.length > 0) {
         await createNotification(
           seekerResult.rows[0].seeker_id,
-          'payment_failed',
-          'Payment Failed ❌',
+          "payment_failed",
+          "Payment Failed ❌",
           `Your payment for booking #${bookingId} failed. Please try again or contact support.`,
-          { bookingId, reason: message }
+          { bookingId, reason: message },
         );
       }
 
       console.log(`❌ Payment failed for booking ${bookingId}: ${message}`);
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return { success: true };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Payment failure handling error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Payment failure handling error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -1029,7 +1133,7 @@ export const processRefund = async (data) => {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Find the original transaction
     const transactionQuery = `
@@ -1041,19 +1145,19 @@ export const processRefund = async (data) => {
     const transactionResult = await client.query(transactionQuery, [bookingId]);
 
     if (transactionResult.rows.length === 0) {
-      throw new Error('No successful payment found for this booking');
+      throw new Error("No successful payment found for this booking");
     }
 
     const transaction = transactionResult.rows[0];
 
     // Check if already refunded
     const refundCheck = await client.query(
-      'SELECT id FROM transactions WHERE booking_id = $1 AND type = $2 AND status = $3',
-      [bookingId, 'refund', PAYMENT_STATUS.SUCCESSFUL]
+      "SELECT id FROM transactions WHERE booking_id = $1 AND type = $2 AND status = $3",
+      [bookingId, "refund", PAYMENT_STATUS.SUCCESSFUL],
     );
 
     if (refundCheck.rows.length > 0) {
-      throw new Error('Booking already refunded');
+      throw new Error("Booking already refunded");
     }
 
     // Calculate refund amount (support partial refunds - PRD Section 17.3)
@@ -1061,7 +1165,9 @@ export const processRefund = async (data) => {
     if (partial) {
       refundAmount = await calculatePartialRefund(bookingId);
       if (refundAmount === 0) {
-        throw new Error('No refund available for this booking based on cancellation policy');
+        throw new Error(
+          "No refund available for this booking based on cancellation policy",
+        );
       }
     } else {
       refundAmount = amount || parseFloat(transaction.amount);
@@ -1081,21 +1187,21 @@ export const processRefund = async (data) => {
       bookingId,
       refundAmount,
       refundCommission,
-      'refund',
+      "refund",
       PAYMENT_STATUS.PENDING,
-      generatePaymentReference('REF')
+      generatePaymentReference("REF"),
     ]);
 
     const refundId = refundResult.rows[0].id;
 
     // Process refund with provider (if we have payment_reference)
     let refundSuccess = false;
-    let providerRefundStatus = 'pending';
-    
+    let providerRefundStatus = "pending";
+
     if (transaction.payment_reference) {
       try {
-        const provider = transaction.payment_reference.startsWith('FLW') 
-          ? PAYMENT_PROVIDERS.FLUTTERWAVE 
+        const provider = transaction.payment_reference.startsWith("FLW")
+          ? PAYMENT_PROVIDERS.FLUTTERWAVE
           : PAYMENT_PROVIDERS.PAYSTACK;
 
         let refundResult;
@@ -1103,33 +1209,33 @@ export const processRefund = async (data) => {
           refundResult = await refundPaystackTransaction({
             transactionId: transaction.payment_reference,
             amount: refundAmount,
-            reason: reason || 'Customer requested refund'
+            reason: reason || "Customer requested refund",
           });
         } else {
           refundResult = await refundFlutterwaveTransaction({
             transactionId: transaction.payment_reference,
             amount: refundAmount,
-            reason: reason || 'Customer requested refund'
+            reason: reason || "Customer requested refund",
           });
         }
 
         refundSuccess = refundResult.success;
-        providerRefundStatus = refundResult.status || 'completed';
+        providerRefundStatus = refundResult.status || "completed";
 
         if (refundSuccess) {
           await client.query(
-            'UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2',
-            [PAYMENT_STATUS.SUCCESSFUL, refundId]
+            "UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2",
+            [PAYMENT_STATUS.SUCCESSFUL, refundId],
           );
         }
       } catch (error) {
-        console.error('❌ Provider refund failed:', error.message);
+        console.error("❌ Provider refund failed:", error.message);
         // Mark as pending for manual processing
         await client.query(
-          'UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2',
-          ['pending_refund', refundId]
+          "UPDATE transactions SET status = $1, updated_at = NOW() WHERE id = $2",
+          ["pending_refund", refundId],
         );
-        providerRefundStatus = 'pending_manual';
+        providerRefundStatus = "pending_manual";
       }
     }
 
@@ -1152,7 +1258,7 @@ export const processRefund = async (data) => {
           `UPDATE wallets 
            SET balance = balance - $1, updated_at = NOW() 
            WHERE host_id = $2 AND balance >= $1`,
-          [netAmount, hostId]
+          [netAmount, hostId],
         );
       }
 
@@ -1161,54 +1267,57 @@ export const processRefund = async (data) => {
         `UPDATE bookings 
          SET status = 'cancelled', updated_at = NOW() 
          WHERE id = $1`,
-        [bookingId]
+        [bookingId],
       );
 
       // Notify user of refund
       await createNotification(
-        (await client.query('SELECT seeker_id FROM bookings WHERE id = $1', [bookingId])).rows[0].seeker_id,
-        'refund_processed',
-        'Refund Processed 💰',
+        (
+          await client.query("SELECT seeker_id FROM bookings WHERE id = $1", [
+            bookingId,
+          ])
+        ).rows[0].seeker_id,
+        "refund_processed",
+        "Refund Processed 💰",
         `Your refund of ₦${refundAmount} has been processed for booking #${bookingId}.`,
-        { bookingId, refundAmount }
+        { bookingId, refundAmount },
       );
     }
 
     // Log admin action (PRD Section 12)
     if (adminId) {
-      await logAdminAction(client, adminId, 'refund', { 
-        bookingId, 
-        refundId, 
+      await logAdminAction(client, adminId, "refund", {
+        bookingId,
+        refundId,
         refundAmount,
         reason,
         partial,
-        providerRefundStatus
+        providerRefundStatus,
       });
     }
 
     // Log system action
-    await logSystemAction(client, 'refund_processed', {
+    await logSystemAction(client, "refund_processed", {
       bookingId,
       refundId,
       refundAmount,
       success: refundSuccess,
-      providerRefundStatus
+      providerRefundStatus,
     });
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return {
       success: refundSuccess,
       refundId: refundId,
       bookingId: bookingId,
       amount: refundAmount,
-      status: refundSuccess ? PAYMENT_STATUS.SUCCESSFUL : 'pending_refund',
-      providerStatus: providerRefundStatus
+      status: refundSuccess ? PAYMENT_STATUS.SUCCESSFUL : "pending_refund",
+      providerStatus: providerRefundStatus,
     };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Refund processing error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Refund processing error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -1249,7 +1358,7 @@ export const getPaymentStatus = async (bookingId) => {
   return {
     exists: true,
     ...result.rows[0],
-    payment_date: result.rows[0].payment_date.toISOString()
+    payment_date: result.rows[0].payment_date.toISOString(),
   };
 };
 
@@ -1265,11 +1374,11 @@ export default {
   initializeFlutterwaveTransaction,
   verifyFlutterwaveTransaction,
   refundFlutterwaveTransaction,
-  
+
   // Webhook verification
   verifyPaystackWebhook,
   verifyFlutterwaveWebhook,
-  
+
   // Core functions
   generatePaymentReference,
   processPayment,
@@ -1277,7 +1386,7 @@ export default {
   handlePaymentFailure,
   processRefund,
   getPaymentStatus,
-  
+
   // Helper functions (exported for testing)
   createNotification,
   calculatePartialRefund,
@@ -1286,5 +1395,5 @@ export default {
   generateCheckinCode,
   generateIdempotencyKey,
   logSystemAction,
-  logAdminAction
+  logAdminAction,
 };
