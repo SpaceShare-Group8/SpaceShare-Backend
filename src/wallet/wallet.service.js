@@ -4,8 +4,9 @@
 // PRD Sections: 10.8, 11.8, 11.15
 // ================================================================
 
-import crypto from 'crypto';
-import pool from '../common/config/db.js';
+import crypto from "crypto";
+import pool from "../common/config/db.js";
+import { sendEmail } from "../notifications/notification.service.js";
 import {
   WITHDRAWAL_STATUS,
   TRANSACTION_TYPES,
@@ -18,8 +19,8 @@ import {
   isValidWithdrawalAmount,
   getHoldPeriodEndDate,
   isPayoutReady,
-  getBankNameByCode
-} from './wallet.constants.js';
+  getBankNameByCode,
+} from "./wallet.constants.js";
 
 import {
   findWalletByHostId,
@@ -41,8 +42,8 @@ import {
   markPayoutCompleted,
   markPayoutFailed,
   getPayoutSchedule as getPayoutScheduleRepo,
-  getTotalPendingPayouts
-} from './wallet.repository.js';
+  getTotalPendingPayouts,
+} from "./wallet.repository.js";
 
 // ================================================================
 // HELPER FUNCTIONS
@@ -53,25 +54,49 @@ import {
  * @param {string} prefix - Reference prefix
  * @returns {string} - Unique reference
  */
-const generateReference = (prefix = 'WTH') => {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const random = crypto.randomBytes(6).toString('hex').toUpperCase();
+const generateReference = (prefix = "WTH") => {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const random = crypto.randomBytes(6).toString("hex").toUpperCase();
   return `${prefix}-${date}-${random}`;
 };
 
 /**
  * Create a notification record
  */
-const createNotification = async (userId, type, title, message, metadata = {}) => {
+const createNotification = async (
+  userId,
+  type,
+  title,
+  message,
+  metadata = {},
+) => {
   const query = `
     INSERT INTO notifications (user_id, type, title, message, metadata, created_at)
     VALUES ($1, $2, $3, $4, $5, NOW())
     RETURNING id
   `;
-  const result = await pool.query(query, [userId, type, title, message, JSON.stringify(metadata)]);
-  return result.rows[0];
-};
+const result = await pool.query(query, [
+  userId,
+  type,
+  title,
+  message,
+  JSON.stringify(metadata),
+]);
 
+const userResult = await pool.query(
+  "SELECT email FROM users WHERE id = $1",
+  [userId]
+);
+
+if (userResult.rows.length > 0) {
+  try {
+    await sendEmail(userResult.rows[0].email, title, message);
+  } catch (err) {
+    console.error("Email failed:", err.message);
+  }
+}
+
+return result.rows[0];
 /**
  * Log system action
  */
@@ -110,7 +135,7 @@ const formatTransactionResponse = (transaction) => {
     provider_fee: parseFloat(transaction.provider_fee || 0),
     metadata: transaction.metadata || {},
     created_at: transaction.created_at,
-    updated_at: transaction.updated_at
+    updated_at: transaction.updated_at,
   };
 };
 
@@ -129,7 +154,7 @@ const formatWithdrawalResponse = (withdrawal) => {
     bank_name: getBankNameByCode(withdrawal.bank_code) || withdrawal.bank_code,
     processed_at: withdrawal.processed_at || null,
     created_at: withdrawal.created_at,
-    updated_at: withdrawal.updated_at
+    updated_at: withdrawal.updated_at,
   };
 };
 
@@ -145,7 +170,7 @@ const formatWithdrawalResponse = (withdrawal) => {
  */
 export const getWalletBalance = async (hostId) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   // Get or create wallet
@@ -172,7 +197,7 @@ export const getWalletBalance = async (hostId) => {
     pending_withdrawals: pendingWithdrawals,
     total_earned: totalEarned,
     available_balance: parseFloat(wallet.balance) - pendingWithdrawals,
-    last_updated: wallet.updated_at
+    last_updated: wallet.updated_at,
   };
 };
 
@@ -184,7 +209,7 @@ export const getWalletBalance = async (hostId) => {
  */
 export const getTransactionHistory = async (hostId, filters = {}) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   // Get or create wallet
@@ -197,7 +222,7 @@ export const getTransactionHistory = async (hostId, filters = {}) => {
 
   return {
     transactions: result.transactions.map(formatTransactionResponse),
-    meta: result.meta
+    meta: result.meta,
   };
 };
 
@@ -207,9 +232,9 @@ export const getTransactionHistory = async (hostId, filters = {}) => {
  * @param {string} period - Period (daily, weekly, monthly, yearly)
  * @returns {Promise<Object>} - Earnings summary
  */
-export const getEarningsSummary = async (hostId, period = 'monthly') => {
+export const getEarningsSummary = async (hostId, period = "monthly") => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   // Get or create wallet
@@ -231,7 +256,10 @@ export const getEarningsSummary = async (hostId, period = 'monthly') => {
       AND status = 'completed'
       AND created_at >= $2
   `;
-  const statsResult = await pool.query(statsQuery, [wallet.id, summary.start_date]);
+  const statsResult = await pool.query(statsQuery, [
+    wallet.id,
+    summary.start_date,
+  ]);
 
   return {
     period: summary.period,
@@ -243,9 +271,11 @@ export const getEarningsSummary = async (hostId, period = 'monthly') => {
     total_commission: summary.total_commission,
     net_earnings: summary.net_earnings,
     total_bookings: parseInt(statsResult.rows[0]?.total_bookings || 0, 10),
-    average_per_booking: parseFloat(statsResult.rows[0]?.average_per_booking || 0),
+    average_per_booking: parseFloat(
+      statsResult.rows[0]?.average_per_booking || 0,
+    ),
     growth_percentage: summary.growth_percentage,
-    top_earning: summary.top_earning
+    top_earning: summary.top_earning,
   };
 };
 
@@ -277,7 +307,7 @@ export const checkDailyWithdrawalLimit = async (hostId) => {
     used: limits.daily_used,
     remaining: remaining,
     is_exceeded: remaining <= 0,
-    reset_at: limits.daily_reset_at
+    reset_at: limits.daily_reset_at,
   };
 };
 
@@ -295,7 +325,7 @@ export const checkWeeklyWithdrawalLimit = async (hostId) => {
     used: limits.weekly_used,
     remaining: remaining,
     is_exceeded: remaining <= 0,
-    reset_at: limits.weekly_reset_at
+    reset_at: limits.weekly_reset_at,
   };
 };
 
@@ -313,7 +343,7 @@ export const requestWithdrawal = async (hostId, data) => {
   const { amount, bankCode, accountNumber, accountName } = data;
 
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   // Validate amount
@@ -332,7 +362,7 @@ export const requestWithdrawal = async (hostId, data) => {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Lock wallet for transaction
     const lockedWallet = await getWalletWithLock(hostId, client);
@@ -357,16 +387,20 @@ export const requestWithdrawal = async (hostId, data) => {
 
     // Check if amount exceeds remaining daily limit
     if (amount > dailyLimit.remaining) {
-      throw new Error(`Daily limit exceeded. Remaining: ₦${dailyLimit.remaining.toFixed(2)}`);
+      throw new Error(
+        `Daily limit exceeded. Remaining: ₦${dailyLimit.remaining.toFixed(2)}`,
+      );
     }
 
     // Check if amount exceeds remaining weekly limit
     if (amount > weeklyLimit.remaining) {
-      throw new Error(`Weekly limit exceeded. Remaining: ₦${weeklyLimit.remaining.toFixed(2)}`);
+      throw new Error(
+        `Weekly limit exceeded. Remaining: ₦${weeklyLimit.remaining.toFixed(2)}`,
+      );
     }
 
     // Generate reference
-    const reference = generateReference('WTH');
+    const reference = generateReference("WTH");
 
     // Create withdrawal request
     const withdrawal = await createWithdrawalRequest({
@@ -375,11 +409,11 @@ export const requestWithdrawal = async (hostId, data) => {
       bankCode,
       accountNumber,
       accountName,
-      reference
+      reference,
     });
 
     // Deduct from wallet balance
-    await updateWalletBalance(hostId, amount, 'subtract');
+    await updateWalletBalance(hostId, amount, "subtract");
 
     // Update withdrawal usage
     await updateWithdrawalUsage(hostId, amount);
@@ -393,39 +427,38 @@ export const requestWithdrawal = async (hostId, data) => {
       type: TRANSACTION_TYPES.PAYOUT,
       status: TRANSACTION_STATUS.PENDING,
       reference: reference,
-      paymentMethod: 'bank_transfer',
+      paymentMethod: "bank_transfer",
       providerFee: 0,
       metadata: {
         withdrawal_id: withdrawal.id,
         bank_code: bankCode,
         account_number: accountNumber,
-        account_name: accountName
-      }
+        account_name: accountName,
+      },
     });
 
     // Log system action
-    await logSystemAction(client, 'withdrawal_requested', {
+    await logSystemAction(client, "withdrawal_requested", {
       hostId,
       amount,
       reference,
-      withdrawal_id: withdrawal.id
+      withdrawal_id: withdrawal.id,
     });
 
     // Create notification for host
     await createNotification(
       hostId,
-      'withdrawal_requested',
-      'Withdrawal Request Submitted 💰',
+      "withdrawal_requested",
+      "Withdrawal Request Submitted 💰",
       `Your withdrawal request of ₦${amount.toFixed(2)} has been submitted and is pending processing.`,
-      { withdrawalId: withdrawal.id, amount, reference }
+      { withdrawalId: withdrawal.id, amount, reference },
     );
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return formatWithdrawalResponse(withdrawal);
-
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -440,14 +473,14 @@ export const requestWithdrawal = async (hostId, data) => {
  */
 export const getWithdrawalHistory = async (hostId, filters = {}) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   const result = await findWithdrawalRequests(hostId, filters);
 
   return {
     withdrawals: result.withdrawals.map(formatWithdrawalResponse),
-    meta: result.meta
+    meta: result.meta,
   };
 };
 
@@ -466,15 +499,15 @@ export const getWithdrawalHistory = async (hostId, filters = {}) => {
  */
 export const scheduleHostPayout = async (client, hostId, bookingId, amount) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   if (!bookingId) {
-    throw new Error('bookingId is required');
+    throw new Error("bookingId is required");
   }
 
   if (!amount || amount <= 0) {
-    throw new Error('Amount must be a positive number');
+    throw new Error("Amount must be a positive number");
   }
 
   // Ensure wallet exists
@@ -488,16 +521,16 @@ export const scheduleHostPayout = async (client, hostId, bookingId, amount) => {
     hostId,
     bookingId,
     amount,
-    holdHours: PAYOUT_CONSTANTS.HOLD_PERIOD_HOURS
+    holdHours: PAYOUT_CONSTANTS.HOLD_PERIOD_HOURS,
   });
 
   // Log system action
-  await logSystemAction(client, 'payout_scheduled', {
+  await logSystemAction(client, "payout_scheduled", {
     hostId,
     bookingId,
     amount,
     scheduled_date: payoutSchedule.scheduled_date,
-    payout_id: payoutSchedule.id
+    payout_id: payoutSchedule.id,
   });
 
   return payoutSchedule;
@@ -515,18 +548,18 @@ export const processPendingPayouts = async (adminId, options = {}) => {
   const { payoutIds, batchSize = PAYOUT_CONSTANTS.BATCH_SIZE } = options;
 
   if (!adminId) {
-    throw new Error('adminId is required');
+    throw new Error("adminId is required");
   }
 
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Get payouts to process
     let payouts;
     if (payoutIds && payoutIds.length > 0) {
-      const placeholders = payoutIds.map((_, i) => `$${i + 1}`).join(',');
+      const placeholders = payoutIds.map((_, i) => `$${i + 1}`).join(",");
       const query = `
         SELECT 
           ps.id,
@@ -550,13 +583,13 @@ export const processPendingPayouts = async (adminId, options = {}) => {
     }
 
     if (payouts.length === 0) {
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       return {
         processed: 0,
         successful: 0,
         failed: 0,
         failed_ids: [],
-        total_amount: 0
+        total_amount: 0,
       };
     }
 
@@ -578,7 +611,7 @@ export const processPendingPayouts = async (adminId, options = {}) => {
           `UPDATE payout_schedules 
            SET status = 'ready', updated_at = NOW() 
            WHERE id = $1 AND status = 'pending'`,
-          [payout.id]
+          [payout.id],
         );
 
         // Here you would integrate with your payment provider
@@ -599,38 +632,37 @@ export const processPendingPayouts = async (adminId, options = {}) => {
             commissionAmount: 0,
             type: TRANSACTION_TYPES.PAYOUT,
             status: TRANSACTION_STATUS.COMPLETED,
-            reference: generateReference('PAY'),
-            paymentMethod: 'bank_transfer',
+            reference: generateReference("PAY"),
+            paymentMethod: "bank_transfer",
             providerFee: 0,
             metadata: {
               payout_id: payout.id,
-              scheduled_date: payout.scheduled_date
-            }
+              scheduled_date: payout.scheduled_date,
+            },
           });
         }
 
         // Create notification for host
         await createNotification(
           payout.host_id,
-          'payout_completed',
-          'Payout Completed 💰',
+          "payout_completed",
+          "Payout Completed 💰",
           `Your payout of ₦${parseFloat(payout.amount).toFixed(2)} has been sent to your bank account.`,
-          { payoutId: payout.id, amount: payout.amount }
+          { payoutId: payout.id, amount: payout.amount },
         );
 
         successful++;
         totalAmount += parseFloat(payout.amount);
 
         // Log system action
-        await logSystemAction(client, 'payout_processed', {
+        await logSystemAction(client, "payout_processed", {
           payout_id: payout.id,
           host_id: payout.host_id,
           amount: payout.amount,
-          admin_id: adminId
+          admin_id: adminId,
         });
-
       } catch (error) {
-        console.error('❌ Payout processing error:', error.message);
+        console.error("❌ Payout processing error:", error.message);
         failed++;
         failedIds.push(payout.id);
 
@@ -638,38 +670,37 @@ export const processPendingPayouts = async (adminId, options = {}) => {
         await markPayoutFailed(payout.id, error.message);
 
         // Log failure
-        await logSystemAction(client, 'payout_failed', {
+        await logSystemAction(client, "payout_failed", {
           payout_id: payout.id,
           host_id: payout.host_id,
           amount: payout.amount,
           reason: error.message,
-          admin_id: adminId
+          admin_id: adminId,
         });
       }
     }
 
     // Log admin action
-    await logAdminAction(client, adminId, 'process_payouts', {
+    await logAdminAction(client, adminId, "process_payouts", {
       processed: payouts.length,
       successful,
       failed,
       total_amount: totalAmount,
-      failed_ids: failedIds
+      failed_ids: failedIds,
     });
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return {
       processed: payouts.length,
       successful,
       failed,
       failed_ids: failedIds,
-      total_amount: totalAmount
+      total_amount: totalAmount,
     };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Process pending payouts error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Process pending payouts error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -684,7 +715,7 @@ export const processPendingPayouts = async (adminId, options = {}) => {
  */
 export const getPayoutSchedule = async (hostId, filters = {}) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   const result = await getPayoutScheduleRepo(hostId, filters);
@@ -699,7 +730,7 @@ export const getPayoutSchedule = async (hostId, filters = {}) => {
  */
 export const getPendingPayouts = async (hostId) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   const query = `
@@ -725,18 +756,18 @@ export const getPendingPayouts = async (hostId) => {
 
   const result = await pool.query(query, [hostId]);
 
-  const payouts = result.rows.map(payout => ({
+  const payouts = result.rows.map((payout) => ({
     id: payout.id,
     booking_id: payout.booking_id,
     amount: parseFloat(payout.amount),
-    workspace_title: payout.workspace_title || 'Unknown Space',
+    workspace_title: payout.workspace_title || "Unknown Space",
     status: payout.status,
     readiness: payout.readiness,
     scheduled_date: payout.scheduled_date,
     created_at: payout.created_at,
-    hold_period_remaining: isPayoutReady(payout.scheduled_date) 
-      ? 'Ready for processing' 
-      : `${Math.ceil((new Date(payout.scheduled_date) - new Date()) / (1000 * 60 * 60))} hours`
+    hold_period_remaining: isPayoutReady(payout.scheduled_date)
+      ? "Ready for processing"
+      : `${Math.ceil((new Date(payout.scheduled_date) - new Date()) / (1000 * 60 * 60))} hours`,
   }));
 
   const totalPending = payouts.reduce((sum, p) => sum + p.amount, 0);
@@ -744,7 +775,7 @@ export const getPendingPayouts = async (hostId) => {
   return {
     pending_payouts: payouts,
     total_pending: payouts.length,
-    total_amount: totalPending
+    total_amount: totalPending,
   };
 };
 
@@ -760,15 +791,15 @@ export const getPendingPayouts = async (hostId) => {
  */
 export const getAllPendingWithdrawals = async (adminId) => {
   if (!adminId) {
-    throw new Error('adminId is required');
+    throw new Error("adminId is required");
   }
 
   const withdrawals = await getPendingWithdrawals({ limit: 100 });
 
-  return withdrawals.map(w => ({
+  return withdrawals.map((w) => ({
     ...w,
     amount: parseFloat(w.amount),
-    current_balance: parseFloat(w.current_balance || 0)
+    current_balance: parseFloat(w.current_balance || 0),
   }));
 };
 
@@ -780,17 +811,17 @@ export const getAllPendingWithdrawals = async (adminId) => {
  */
 export const processWithdrawalBatch = async (adminId, withdrawalIds) => {
   if (!adminId) {
-    throw new Error('adminId is required');
+    throw new Error("adminId is required");
   }
 
   if (!withdrawalIds || withdrawalIds.length === 0) {
-    throw new Error('No withdrawal IDs provided');
+    throw new Error("No withdrawal IDs provided");
   }
 
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     let successful = 0;
     let failed = 0;
@@ -805,7 +836,9 @@ export const processWithdrawalBatch = async (adminId, withdrawalIds) => {
           FROM withdrawal_requests
           WHERE id = $1 AND status = 'pending'
         `;
-        const withdrawalResult = await client.query(withdrawalQuery, [withdrawalId]);
+        const withdrawalResult = await client.query(withdrawalQuery, [
+          withdrawalId,
+        ]);
 
         if (withdrawalResult.rows.length === 0) {
           failed++;
@@ -816,7 +849,10 @@ export const processWithdrawalBatch = async (adminId, withdrawalIds) => {
         const withdrawal = withdrawalResult.rows[0];
 
         // Update withdrawal status to processing
-        await updateWithdrawalStatus(withdrawalId, WITHDRAWAL_STATUS.PROCESSING);
+        await updateWithdrawalStatus(
+          withdrawalId,
+          WITHDRAWAL_STATUS.PROCESSING,
+        );
 
         // Here you would integrate with your payment provider
         // to actually send money to the host's bank account
@@ -828,64 +864,62 @@ export const processWithdrawalBatch = async (adminId, withdrawalIds) => {
         // Create notification for host
         await createNotification(
           withdrawal.host_id,
-          'withdrawal_completed',
-          'Withdrawal Completed 💰',
+          "withdrawal_completed",
+          "Withdrawal Completed 💰",
           `Your withdrawal of ₦${parseFloat(withdrawal.amount).toFixed(2)} has been sent to your bank account.`,
-          { withdrawalId, amount: withdrawal.amount }
+          { withdrawalId, amount: withdrawal.amount },
         );
 
         successful++;
         totalAmount += parseFloat(withdrawal.amount);
 
         // Log system action
-        await logSystemAction(client, 'withdrawal_processed', {
+        await logSystemAction(client, "withdrawal_processed", {
           withdrawal_id: withdrawalId,
           host_id: withdrawal.host_id,
           amount: withdrawal.amount,
-          admin_id: adminId
+          admin_id: adminId,
         });
-
       } catch (error) {
-        console.error('❌ Withdrawal processing error:', error.message);
+        console.error("❌ Withdrawal processing error:", error.message);
         failed++;
         failedIds.push(withdrawalId);
 
         // Update withdrawal status to failed
         await updateWithdrawalStatus(withdrawalId, WITHDRAWAL_STATUS.FAILED, {
-          reason: error.message
+          reason: error.message,
         });
 
         // Log failure
-        await logSystemAction(client, 'withdrawal_failed', {
+        await logSystemAction(client, "withdrawal_failed", {
           withdrawal_id: withdrawalId,
           reason: error.message,
-          admin_id: adminId
+          admin_id: adminId,
         });
       }
     }
 
     // Log admin action
-    await logAdminAction(client, adminId, 'process_withdrawals', {
+    await logAdminAction(client, adminId, "process_withdrawals", {
       total: withdrawalIds.length,
       successful,
       failed,
       total_amount: totalAmount,
-      failed_ids: failedIds
+      failed_ids: failedIds,
     });
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return {
       processed: withdrawalIds.length,
       successful,
       failed,
       failed_ids: failedIds,
-      total_amount: totalAmount
+      total_amount: totalAmount,
     };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Process withdrawal batch error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Process withdrawal batch error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -902,25 +936,25 @@ export const processWithdrawalBatch = async (adminId, withdrawalIds) => {
  */
 export const manualAdjustment = async (adminId, hostId, amount, reason) => {
   if (!adminId) {
-    throw new Error('adminId is required');
+    throw new Error("adminId is required");
   }
 
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   if (!amount || amount === 0) {
-    throw new Error('Amount must be non-zero');
+    throw new Error("Amount must be non-zero");
   }
 
   if (!reason) {
-    throw new Error('Reason is required for manual adjustment');
+    throw new Error("Reason is required for manual adjustment");
   }
 
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Get or create wallet
     let wallet = await findWalletByHostId(hostId);
@@ -931,11 +965,15 @@ export const manualAdjustment = async (adminId, hostId, amount, reason) => {
     // Lock wallet for transaction
     await getWalletWithLock(hostId, client);
 
-    const operation = amount > 0 ? 'add' : 'subtract';
+    const operation = amount > 0 ? "add" : "subtract";
     const absAmount = Math.abs(amount);
 
     // Update wallet balance
-    const updatedWallet = await updateWalletBalance(hostId, absAmount, operation);
+    const updatedWallet = await updateWalletBalance(
+      hostId,
+      absAmount,
+      operation,
+    );
 
     // Create transaction record
     const transaction = await createTransaction({
@@ -945,46 +983,46 @@ export const manualAdjustment = async (adminId, hostId, amount, reason) => {
       commissionAmount: 0,
       type: TRANSACTION_TYPES.ADJUSTMENT,
       status: TRANSACTION_STATUS.COMPLETED,
-      reference: generateReference('ADJ'),
-      paymentMethod: 'admin_adjustment',
+      reference: generateReference("ADJ"),
+      paymentMethod: "admin_adjustment",
       providerFee: 0,
       metadata: {
         admin_id: adminId,
         operation: operation,
         reason: reason,
-        previous_balance: wallet.balance
-      }
+        previous_balance: wallet.balance,
+      },
     });
 
     // Log admin action
-    await logAdminAction(client, adminId, 'manual_adjustment', {
+    await logAdminAction(client, adminId, "manual_adjustment", {
       hostId,
       amount: amount,
       operation,
       reason,
       previous_balance: wallet.balance,
-      new_balance: updatedWallet.balance
+      new_balance: updatedWallet.balance,
     });
 
     // Log system action
-    await logSystemAction(client, 'manual_adjustment', {
+    await logSystemAction(client, "manual_adjustment", {
       hostId,
       amount: amount,
       operation,
       reason,
-      admin_id: adminId
+      admin_id: adminId,
     });
 
     // Create notification for host
     await createNotification(
       hostId,
-      'wallet_adjusted',
-      `Wallet ${operation === 'add' ? 'Credit' : 'Debit'} 🔄`,
-      `Your wallet has been ${operation === 'add' ? 'credited' : 'debited'} with ₦${absAmount.toFixed(2)}. Reason: ${reason}`,
-      { amount: absAmount, operation, reason }
+      "wallet_adjusted",
+      `Wallet ${operation === "add" ? "Credit" : "Debit"} 🔄`,
+      `Your wallet has been ${operation === "add" ? "credited" : "debited"} with ₦${absAmount.toFixed(2)}. Reason: ${reason}`,
+      { amount: absAmount, operation, reason },
     );
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     return {
       balance: parseFloat(updatedWallet.balance),
@@ -993,12 +1031,11 @@ export const manualAdjustment = async (adminId, hostId, amount, reason) => {
       amount: absAmount,
       reason: reason,
       previous_balance: parseFloat(wallet.balance),
-      updated_at: updatedWallet.updated_at
+      updated_at: updatedWallet.updated_at,
     };
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Manual adjustment error:', error.message);
+    await client.query("ROLLBACK");
+    console.error("❌ Manual adjustment error:", error.message);
     throw error;
   } finally {
     client.release();
@@ -1017,7 +1054,7 @@ export const manualAdjustment = async (adminId, hostId, amount, reason) => {
  */
 export const getWalletStats = async (hostId) => {
   if (!hostId) {
-    throw new Error('hostId is required');
+    throw new Error("hostId is required");
   }
 
   // Get or create wallet
@@ -1098,15 +1135,17 @@ export const getWalletStats = async (hostId) => {
     pending_withdrawals: parseFloat(pendingResult.rows[0].total_pending || 0),
     available_balance: parseFloat(wallet.balance),
     total_bookings: parseInt(bookingsResult.rows[0].total_bookings || 0, 10),
-    average_earning_per_booking: parseInt(bookingsResult.rows[0].total_bookings || 0, 10) > 0
-      ? parseFloat(earnedResult.rows[0].total_earned || 0) / parseInt(bookingsResult.rows[0].total_bookings || 0, 10)
-      : 0,
+    average_earning_per_booking:
+      parseInt(bookingsResult.rows[0].total_bookings || 0, 10) > 0
+        ? parseFloat(earnedResult.rows[0].total_earned || 0) /
+          parseInt(bookingsResult.rows[0].total_bookings || 0, 10)
+        : 0,
     last_payout_date: lastPayoutResult.rows[0]?.completed_date || null,
     monthly_trend: {
       current_month: trends.length > 0 ? parseFloat(trends[0].total) : 0,
       previous_month: trends.length > 1 ? parseFloat(trends[1].total) : 0,
-      growth: parseFloat(growth.toFixed(2))
-    }
+      growth: parseFloat(growth.toFixed(2)),
+    },
   };
 };
 
@@ -1142,5 +1181,5 @@ export default {
   getWalletStats,
 
   // Helpers
-  formatTransactionResponse
+  formatTransactionResponse,
 };
