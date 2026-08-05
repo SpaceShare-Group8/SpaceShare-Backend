@@ -20,6 +20,7 @@ import {
 } from "./workspace.controller.js";
 
 import availabilityRoutes from "../booking/availability/availability.routes.js";
+import reliabilityRoutes from "../reliability/routes/reliability.routes.js";
 import { handleSearchWorkspaces } from "./search.controller.js";
 
 const router = Router();
@@ -49,8 +50,9 @@ router.patch(
 
 /* Availability routes */
 router.use("/", availabilityRoutes);
-router.post("/:id/photos", upload.single("photo"), handleUploadWorkspacePhoto);
 
+/* Reliability score route */
+router.use("/", reliabilityRoutes);
 
 router.get("/:id/photos", handleListWorkspacePhotos);
 router.delete("/:workspaceId/photos/:photoId", protect, handleDeleteWorkspacePhoto);

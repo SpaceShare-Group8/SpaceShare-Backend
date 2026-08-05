@@ -7,7 +7,7 @@
 import axios from "axios";
 import crypto from "crypto";
 import pool from "../common/config/db.js";
-import { sendEmail } from "../notification/notification.service.js";
+import { sendEmail } from "../notifications/notification.service.js";
 import {
   PAYMENT_PROVIDERS,
   DEFAULT_PROVIDER,

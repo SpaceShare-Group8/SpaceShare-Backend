@@ -10,7 +10,7 @@ export const createCorporateAccount = async ({ adminUserId, companyName, budgetA
 
     // 1. Insert Corporate Account
     const insertQuery = `
-      INSERT INTO "CorporateAccounts" (admin_user_id, company_name, budget_amount, budget_period)
+      INSERT INTO corporate_accounts (admin_user_id, company_name, budget_amount, budget_period)
       VALUES ($1, $2, $3, $4)
       RETURNING id, admin_user_id, company_name, budget_amount, budget_period;
     `;
@@ -22,10 +22,14 @@ export const createCorporateAccount = async ({ adminUserId, companyName, budgetA
     ]);
     const corporateAccount = res.rows[0];
 
-    // 2. Add 'corporate_admin' role to the user's roles array if not already present
+    // 2. Set the user's role to 'corporate_admin'.
+    // NOTE: `role` is a single column (not an array) on this schema — see
+    // migrations/001_create_users.sql. The original query here referenced
+    // a `roles` array column and a quoted "Users" table, neither of which
+    // exist; both bugs are fixed here.
     const updateRoleQuery = `
-      UPDATE "Users"
-      SET roles = ARRAY(SELECT DISTINCT unnest(array_append(roles, 'corporate_admin')))
+      UPDATE users
+      SET role = 'corporate_admin'
       WHERE id = $1;
     `;
     await client.query(updateRoleQuery, [adminUserId]);
@@ -46,7 +50,7 @@ export const createCorporateAccount = async ({ adminUserId, companyName, budgetA
 export const findCorporateAccountById = async (accountId) => {
   const query = `
     SELECT id, admin_user_id, company_name, budget_amount, budget_period
-    FROM "CorporateAccounts"
+    FROM corporate_accounts
     WHERE id = $1;
   `;
   const res = await pool.query(query, [accountId]);
@@ -59,7 +63,7 @@ export const findCorporateAccountById = async (accountId) => {
 export const findCorporateAccountByAdminId = async (adminUserId) => {
   const query = `
     SELECT id, admin_user_id, company_name, budget_amount, budget_period
-    FROM "CorporateAccounts"
+    FROM corporate_accounts
     WHERE admin_user_id = $1;
   `;
   const res = await pool.query(query, [adminUserId]);
@@ -71,7 +75,7 @@ export const findCorporateAccountByAdminId = async (adminUserId) => {
  */
 export const updateCorporateBudget = async (accountId, { budgetAmount, budgetPeriod }) => {
   const query = `
-    UPDATE "CorporateAccounts"
+    UPDATE corporate_accounts
     SET budget_amount = COALESCE($1, budget_amount),
         budget_period = COALESCE($2, budget_period)
     WHERE id = $3
@@ -87,8 +91,8 @@ export const updateCorporateBudget = async (accountId, { budgetAmount, budgetPer
 export const findCorporateEmployeeByEmail = async (corporateAccountId, email) => {
   const query = `
     SELECT id, corporate_account_id, user_id, invited_at, status
-    FROM "CorporateEmployees"
-    WHERE corporate_account_id = $1 AND user_id = (SELECT id FROM "Users" WHERE email = $2);
+    FROM corporate_employees
+    WHERE corporate_account_id = $1 AND user_id = (SELECT id FROM users WHERE email = $2);
   `;
   const res = await pool.query(query, [corporateAccountId, email]);
   return res.rows[0] || null;
@@ -99,7 +103,7 @@ export const findCorporateEmployeeByEmail = async (corporateAccountId, email) =>
  */
 export const createCorporateEmployeeInvite = async ({ corporateAccountId, userId }) => {
   const query = `
-    INSERT INTO "CorporateEmployees" (corporate_account_id, user_id, invited_at, status)
+    INSERT INTO corporate_employees (corporate_account_id, user_id, invited_at, status)
     VALUES ($1, $2, NOW(), 'invited')
     RETURNING id, corporate_account_id, user_id, invited_at, status;
   `;
@@ -108,16 +112,79 @@ export const createCorporateEmployeeInvite = async ({ corporateAccountId, userId
 };
 
 /**
+ * Find corporate employee record by corporate account + user ID.
+ * Used at accept-invite time — unlike findCorporateEmployeeByEmail, this
+ * looks up by user_id directly since by this point we've already
+ * resolved the invite token's email to a user record.
+ */
+export const findCorporateEmployeeRecord = async (corporateAccountId, userId) => {
+  const query = `
+    SELECT id, corporate_account_id, user_id, invited_at, status, accepted_at
+    FROM corporate_employees
+    WHERE corporate_account_id = $1 AND user_id = $2;
+  `;
+  const res = await pool.query(query, [corporateAccountId, userId]);
+  return res.rows[0] || null;
+};
+
+/**
+ * Mark a corporate employee record as accepted — status 'active' and
+ * accepted_at set to now. If no invite row exists yet (e.g. the invite
+ * was dispatched to an email that wasn't registered at the time), this
+ * creates one directly in the 'active' state rather than requiring a
+ * separate 'invited' row first.
+ */
+export const activateCorporateEmployee = async (corporateAccountId, userId) => {
+  const query = `
+    INSERT INTO corporate_employees (corporate_account_id, user_id, invited_at, status, accepted_at)
+    VALUES ($1, $2, NOW(), 'active', NOW())
+    ON CONFLICT (corporate_account_id, user_id)
+    DO UPDATE SET status = 'active', accepted_at = NOW()
+    RETURNING id, corporate_account_id, user_id, invited_at, status, accepted_at;
+  `;
+  const res = await pool.query(query, [corporateAccountId, userId]);
+  return res.rows[0];
+};
+
+/**
+ * Sets a user's role to 'corporate_employee', but only if their current
+ * role is still the default 'seeker'. This deliberately avoids
+ * downgrading someone who is already a host, corporate_admin, or admin —
+ * this schema stores a single `role` per user, so overwriting it would
+ * silently strip an existing, more specific role.
+ * Returns the updated row, or null if no update happened (role was
+ * something other than 'seeker').
+ */
+export const setUserRoleToCorporateEmployeeIfSeeker = async (userId) => {
+  const query = `
+    UPDATE users
+    SET role = 'corporate_employee', updated_at = NOW()
+    WHERE id = $1 AND role = 'seeker'
+    RETURNING id, email, role;
+  `;
+  const res = await pool.query(query, [userId]);
+  return res.rows[0] || null;
+};
+
+/**
  * Find user by email helper
  */
 export const findUserByEmail = async (email) => {
-  const query = `SELECT id, email, full_name FROM "Users" WHERE email = $1;`;
+  const query = `SELECT id, email, full_name, role FROM users WHERE email = $1;`;
   const res = await pool.query(query, [email]);
   return res.rows[0] || null;
 };
 
 /**
  * Calculate corporate spending during the active billing period
+ *
+ * ⚠️ KNOWN BUG (not fixed here — needs someone to verify the real
+ * bookings/transactions column names before fixing):
+ * This query and getCorporateUsageReport() below reference quoted
+ * PascalCase tables ("Bookings", "Transactions", "Workspaces", "Users")
+ * that don't exist — the actual tables are lowercase (bookings,
+ * transactions, workspaces, users), same issue that was just fixed
+ * above for corporate_accounts/corporate_employees.
  */
 export const getCorporateSpendInPeriod = async (corporateAccountId, startDate) => {
   const query = `

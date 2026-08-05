@@ -1,5 +1,5 @@
 import pool from '../common/config/db.js';
-import { recalculateWorkspaceReliability } from '../reliability/services/reliability.service.js';
+import { getWorkspaceReliabilityScore } from '../reliability/services/reliability.service.js';
 
 /**
  * Seeker submits a post-booking review, including the two

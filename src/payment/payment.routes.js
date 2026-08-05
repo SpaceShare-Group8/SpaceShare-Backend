@@ -11,10 +11,7 @@ import {
   paymentCallback,
   paymentWebhook,
   getPaymentStatusByBooking,
-  getWalletBalance,
-  requestWithdrawal,
   processRefundRequest,
-  getWithdrawalHistory,
   getTransactionHistory
 } from './payment.controller.js';
 
@@ -62,31 +59,6 @@ router.get('/status/:bookingId', protect, getPaymentStatusByBooking);
  * @access  Private
  */
 router.get('/transactions', protect, getTransactionHistory);
-
-// ================================================================
-// WALLET ROUTES (Host only)
-// ================================================================
-
-/**
- * @route   GET /api/wallet/balance
- * @desc    Get wallet balance for authenticated host
- * @access  Private (Host only)
- */
-router.get('/wallet/balance', protect, authorize('host'), getWalletBalance);
-
-/**
- * @route   POST /api/wallet/withdraw
- * @desc    Request withdrawal from wallet
- * @access  Private (Host only)
- */
-router.post('/wallet/withdraw', protect, authorize('host'), requestWithdrawal);
-
-/**
- * @route   GET /api/wallet/withdrawals
- * @desc    Get withdrawal history for authenticated host
- * @access  Private (Host only)
- */
-router.get('/wallet/withdrawals', protect, authorize('host'), getWithdrawalHistory);
 
 // ================================================================
 // ADMIN ROUTES

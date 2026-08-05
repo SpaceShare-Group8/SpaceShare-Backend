@@ -4,12 +4,18 @@ import {
   createAccount,
   updateCorporateBudget,
   inviteEmployee,
+  acceptInvite,
   getUsageReport,
 } from "./corporate.controller.js";
 
 const router = Router();
 
-// Protect all corporate routes requiring authentication
+// GET /api/corporate/accept-invite — PUBLIC. Must come before
+// `router.use(protect)` below, since the invite token — not a login
+// session — is what authorizes this request.
+router.get("/accept-invite", acceptInvite);
+
+// Protect all remaining corporate routes requiring authentication
 router.use(protect);
 
 // POST /api/corporate/accounts - Provision corporate account

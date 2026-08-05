@@ -97,6 +97,8 @@ if (userResult.rows.length > 0) {
 }
 
 return result.rows[0];
+};
+
 /**
  * Log system action
  */

@@ -11,6 +11,13 @@ export const addFavorite = async (req, res, next) => {
 
     const favorite = await favoritesService.addFavorite(userId, workspaceId);
 
+    if (!favorite) {
+      return res.status(200).json({
+        success: true,
+        message: "Workspace was already in your favorites.",
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: "Workspace added to favorites.",
