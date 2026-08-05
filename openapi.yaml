@@ -1,0 +1,1112 @@
+openapi: 3.0.0
+info:
+  title: SpaceShare API — Full Live Coverage
+  description: >-
+    Every endpoint actually mounted in app.js as of the final patch, verified by
+    booting the real server against a live database. Endpoints that exist in
+    code but aren't reachable (e.g. the old unmounted payment module) are
+    excluded.
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000
+    description: Root Server
+  - url: http://localhost:4000/api
+    description: API Base Server
+paths:
+  /health:
+    get:
+      summary: Health Check
+      tags:
+        - Health
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+  /auth/register:
+    post:
+      summary: Register
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              email: user@example.com
+              password: Password123!
+              full_name: Test User
+              phone: '+2348011112222'
+              role: seeker
+  /auth/login:
+    post:
+      summary: Login
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              email: user@example.com
+              password: Password123!
+  /auth/refresh:
+    post:
+      summary: Refresh Token
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              refreshToken: '{{refreshToken}}'
+  /auth/forgot-password:
+    post:
+      summary: Forgot Password
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              email: user@example.com
+  /auth/reset-password:
+    post:
+      summary: Reset Password
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              token: reset-token-here
+              password: NewPassword123!
+  /auth/me:
+    get:
+      summary: Get Me
+      tags:
+        - Auth
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /workspaces:
+    post:
+      summary: Create Workspace (Host)
+      tags:
+        - Workspaces
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              title: Quiet Desk Lagos
+              workspace_type: desk
+              capacity: 2
+              city: Lagos
+              address: 12 Adeola Odeku St
+              latitude: 6.4281
+              longitude: 3.4219
+      security:
+        - bearerAuth: []
+    get:
+      summary: List Workspaces (filters)
+      tags:
+        - Workspaces
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minCapacity
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: amenities
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minReliabilityScore
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/search:
+    get:
+      summary: Search Workspaces
+      tags:
+        - Workspaces
+      parameters:
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: radius
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/find-me-power-now:
+    get:
+      summary: Find Me Power Now
+      tags:
+        - Workspaces
+      parameters:
+        - name: lat
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: lng
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/{workspaceId}:
+    get:
+      summary: Get Workspace by ID
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+    put:
+      summary: Update Workspace (Host)
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              title: Updated title
+      security:
+        - bearerAuth: []
+    delete:
+      summary: Delete Workspace (Host)
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /workspaces/{workspaceId}/photos:
+    post:
+      summary: Upload Workspace Photo (Host)
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+    get:
+      summary: List Workspace Photos
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/{workspaceId}/photos/{photoId}:
+    delete:
+      summary: Delete Workspace Photo (Host)
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /workspaces/{workspaceId}/status:
+    patch:
+      summary: Update Workspace Status (Admin)
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              status: published
+      security:
+        - bearerAuth: []
+  /workspaces/{workspaceId}/reliability-score:
+    get:
+      summary: Get Reliability Score
+      tags:
+        - Workspaces
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/{workspaceId}/availability:
+    post:
+      summary: Create Availability Slot (Host)
+      tags:
+        - Availability
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              date: '2026-08-20'
+              start_time: '09:00'
+              end_time: '17:00'
+      security:
+        - bearerAuth: []
+    get:
+      summary: Get Workspace Availability
+      tags:
+        - Availability
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /workspaces/availability/{availabilityId}:
+    patch:
+      summary: Update Availability Slot (Host)
+      tags:
+        - Availability
+      parameters:
+        - name: availabilityId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              is_blocked: true
+      security:
+        - bearerAuth: []
+    delete:
+      summary: Delete Availability Slot (Host)
+      tags:
+        - Availability
+      parameters:
+        - name: availabilityId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /favorites/{workspaceId}:
+    post:
+      summary: Add Favorite
+      tags:
+        - Favorites
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+    delete:
+      summary: Remove Favorite
+      tags:
+        - Favorites
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /favorites:
+    get:
+      summary: List Favorites
+      tags:
+        - Favorites
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings:
+    post:
+      summary: Create Booking (Seeker)
+      tags:
+        - Bookings
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              workspace_id: '{{workspaceId}}'
+              start_time: '2026-08-20T09:00:00Z'
+              end_time: '2026-08-20T12:00:00Z'
+      security:
+        - bearerAuth: []
+    get:
+      summary: List My Bookings
+      tags:
+        - Bookings
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}:
+    get:
+      summary: Get Booking by ID
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/accept:
+    patch:
+      summary: Accept Booking (Host)
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/decline:
+    patch:
+      summary: Decline Booking (Host)
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/cancel:
+    patch:
+      summary: Cancel Booking
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/extend:
+    patch:
+      summary: Extend Booking
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              new_end_time: '2026-08-20T14:00:00Z'
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/checkin:
+    post:
+      summary: Check In
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              code: '123456'
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/complete:
+    patch:
+      summary: Complete Booking (Host)
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /bookings/{bookingId}/review:
+    post:
+      summary: Submit Review
+      tags:
+        - Bookings
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              rating: 5
+              comment: Great space
+              power_stable: true
+              internet_as_described: true
+      security:
+        - bearerAuth: []
+  /payments/initiate:
+    post:
+      summary: Initiate Payment
+      tags:
+        - Payments
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              booking_id: '{{bookingId}}'
+      security:
+        - bearerAuth: []
+  /payments/callback:
+    get:
+      summary: Payment Callback
+      tags:
+        - Payments
+      parameters:
+        - name: reference
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /payments/webhook:
+    post:
+      summary: Payment Webhook
+      tags:
+        - Payments
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              event: charge.success
+              data: {}
+  /payments/status/{bookingId}:
+    get:
+      summary: Get Payment Status by Booking
+      tags:
+        - Payments
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /payments/transactions:
+    get:
+      summary: Get Transaction History
+      tags:
+        - Payments
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /payments/refund:
+    post:
+      summary: Process Refund (Admin)
+      tags:
+        - Payments
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              booking_id: '{{bookingId}}'
+              reason: host cancelled
+      security:
+        - bearerAuth: []
+  /wallet/balance:
+    get:
+      summary: Get Balance (Host)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/transactions:
+    get:
+      summary: Get Wallet Transactions (Host)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/withdraw:
+    post:
+      summary: Request Withdrawal (Host)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              amount: 5000
+      security:
+        - bearerAuth: []
+  /wallet/withdrawals:
+    get:
+      summary: Get Withdrawal History (Host)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/earnings:
+    get:
+      summary: Get Earnings (Host)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/payouts/pending:
+    get:
+      summary: Get Pending Payouts (Admin)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/payouts/schedule:
+    get:
+      summary: Get Payout Schedule (Admin)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/payouts/process:
+    post:
+      summary: Process Payouts (Admin)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /wallet/stats:
+    get:
+      summary: Get Wallet Stats (Admin)
+      tags:
+        - Wallet
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /corporate/accounts:
+    post:
+      summary: Create Corporate Account
+      tags:
+        - Corporate
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              company_name: Acme Corp
+              budget_amount: 100000
+              budget_period: monthly
+      security:
+        - bearerAuth: []
+  /corporate/budget:
+    patch:
+      summary: Update Budget (Corporate Admin)
+      tags:
+        - Corporate
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              budget_amount: 150000
+      security:
+        - bearerAuth: []
+  /corporate/employees:
+    post:
+      summary: Invite Employee (Corporate Admin)
+      tags:
+        - Corporate
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              email: employee@example.com
+      security:
+        - bearerAuth: []
+  /corporate/accept-invite:
+    get:
+      summary: Accept Invite (Public)
+      tags:
+        - Corporate
+      parameters:
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /corporate/reports:
+    get:
+      summary: Get Usage Report (Corporate Admin)
+      tags:
+        - Corporate
+      parameters:
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /support/tickets/{ticketId}:
+    patch:
+      summary: Update Ticket Status (Admin)
+      tags:
+        - Support
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              status: resolved
+      security:
+        - bearerAuth: []
+  /search/history:
+    post:
+      summary: Save Search
+      tags:
+        - Search History
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              query: desk lagos
+              filters: {}
+      security:
+        - bearerAuth: []
+    get:
+      summary: Get Search History
+      tags:
+        - Search History
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+    delete:
+      summary: Clear Search History
+      tags:
+        - Search History
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/hosts/pending:
+    get:
+      summary: Get Pending Hosts
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/hosts/{hostUserId}/verify:
+    patch:
+      summary: Verify Host
+      tags:
+        - Admin
+      parameters:
+        - name: hostUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/workspaces/pending:
+    get:
+      summary: Get Pending Workspaces
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/workspaces/{workspaceId}/status:
+    patch:
+      summary: Update Workspace Status
+      tags:
+        - Admin
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              status: published
+      security:
+        - bearerAuth: []
+  /admin/bookings:
+    get:
+      summary: Get All Bookings
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/refunds:
+    post:
+      summary: Process Refund
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              booking_id: '{{bookingId}}'
+      security:
+        - bearerAuth: []
+  /admin/disputes:
+    get:
+      summary: Get Disputes
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+  /admin/disputes/{disputeId}/resolve:
+    patch:
+      summary: Resolve Dispute
+      tags:
+        - Admin
+      parameters:
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+      requestBody:
+        content:
+          application/json:
+            example:
+              resolution: refunded
+      security:
+        - bearerAuth: []
+  /admin/analytics:
+    get:
+      summary: Get Analytics
+      tags:
+        - Admin
+      parameters: []
+      responses:
+        '200':
+          description: Successful response
+      security:
+        - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

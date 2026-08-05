@@ -1,5 +1,9 @@
 import express from "express";
 import cors from "cors";
+import fs from "fs";
+import path from "path";
+import yaml from "js-yaml";
+import swaggerUi from "swagger-ui-express";
 
 // Route imports
 import authRoutes from "./auth/auth.routes.js";
@@ -19,6 +23,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Swagger Setup
+try {
+  const swaggerDocument = yaml.load(
+    fs.readFileSync(path.resolve("./openapi.yaml"), "utf8")
+  );
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+} catch (error) {
+  console.error("Failed to load OpenAPI specification:", error.message);
+}
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -46,7 +60,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-//404 Handler
+// 404 Handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,

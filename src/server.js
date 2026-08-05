@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 5000;
 /* Start the server */
 const server = app.listen(PORT, () => {
   console.log(`🚀 SpaceShare API running on http://localhost:${PORT}`);
+  console.log(`📖 API Docs (Swagger UI): http://localhost:${PORT}/api-docs`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(
     `💰 Wallet routes available at: http://localhost:${PORT}/api/wallet`,
