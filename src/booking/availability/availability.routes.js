@@ -39,10 +39,10 @@ router.get(
 );
 
 /**
- * PATCH /api/availability/:id
+ * PATCH /api/workspaces/availability/:id
  */
 router.patch(
-  "/:id",
+  "/availability/:id",
   protect,
   requireVerifiedHost,
   validateUpdateAvailability,
@@ -50,10 +50,10 @@ router.patch(
 );
 
 /**
- * DELETE /api/availability/:id
+ * DELETE /api/workspaces/availability/:id
  */
 router.delete(
-  "/:id",
+  "/availability/:id",
   protect,
   requireVerifiedHost,
   handleDeleteAvailability
