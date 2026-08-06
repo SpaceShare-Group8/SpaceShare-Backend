@@ -5,21 +5,17 @@ import nodemailer from 'nodemailer';
 const transporter = nodemailer.createTransport({
   host: process.env.BREVO_HOST,
   port: Number(process.env.BREVO_PORT || 587),
-  secure: process.env.BREVO_PORT === '465', // True for 465, false for 587/STARTTLS
+  secure: false, // True for 465, false for 587/STARTTLS
   auth: {
     user: process.env.BREVO_USER,
     pass: process.env.BREVO_PASS,
   },
+  // Add connection timeout and logger for more visibility
+  connectionTimeout: 5000, // 5 seconds
 });
 
-// Optional: Verify connection configuration on startup
-transporter.verify((error) => {
-  if (error) {
-    console.error('[Mailer Setup Error] Transporter failed to connect:', error.message);
-  } else {
-    console.log('[Mailer Ready] Brevo SMTP Transporter is online.');
-  }
-});
+// Remove the transporter.verify() call here.
+// Instead, rely on sendEmail to handle errors.
 
 /**
  * Sends an email via Brevo SMTP
@@ -42,12 +38,18 @@ export const sendEmail = async ({ to, subject, text, html }) => {
       html: html || text, // Fallback HTML to text if not provided
     };
 
+    // Add logging before sending
+    console.log(`[Email] Attempting to send to ${to} via ${process.env.BREVO_HOST}:${process.env.BREVO_PORT}`);
     const info = await transporter.sendMail(mailOptions);
     console.log(`[Email Sent] Message ID: ${info.messageId} -> To: ${to}`);
     return info;
   } catch (error) {
     console.error(`[Email Error] Failed to send email to ${to}:`, error);
-    throw error;
+    // Log the specific error to understand why it's failing
+    if (error.code === 'ETIMEDOUT') {
+      console.error('🚨 Connection timeout: Check if your server can reach smtp-relay.brevo.com on port 587.');
+    }
+    throw error; // Re-throw to be handled by the caller
   }
 };
 
