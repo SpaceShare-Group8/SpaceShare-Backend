@@ -1,0 +1,148 @@
+{
+  "info": {
+    "name": "SpaceShare API — Full Live Coverage",
+    "description": "Every endpoint actually mounted in app.js as of the final patch, verified by booting the real server against a live database. Endpoints that exist in code but aren't reachable (e.g. the old unmounted payment module) are excluded.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api" },
+    { "key": "rootUrl", "value": "http://localhost:4000" },
+    { "key": "seekerToken", "value": "" },
+    { "key": "hostToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "workspaceId", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "photoId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Health Check", "request": { "method": "GET", "url": "{{rootUrl}}/health" } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        { "name": "Register", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/auth/register", "body": {"mode":"raw","raw":"{\n  \"email\": \"user@example.com\",\n  \"password\": \"Password123!\",\n  \"full_name\": \"Test User\",\n  \"phone\": \"+2348011112222\",\n  \"role\": \"seeker\"\n}"} } },
+        { "name": "Login", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/auth/login", "body": {"mode":"raw","raw":"{\n  \"email\": \"user@example.com\",\n  \"password\": \"Password123!\"\n}"} } },
+        { "name": "Refresh Token", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/auth/refresh", "body": {"mode":"raw","raw":"{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"} } },
+        { "name": "Forgot Password", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/auth/forgot-password", "body": {"mode":"raw","raw":"{\n  \"email\": \"user@example.com\"\n}"} } },
+        { "name": "Reset Password", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/auth/reset-password", "body": {"mode":"raw","raw":"{\n  \"token\": \"reset-token-here\",\n  \"password\": \"NewPassword123!\"\n}"} } },
+        { "name": "Get Me", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/auth/me" } }
+      ]
+    },
+    {
+      "name": "Workspaces",
+      "item": [
+        { "name": "Create Workspace (Host)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/workspaces", "body": {"mode":"raw","raw":"{\n  \"title\": \"Quiet Desk Lagos\",\n  \"workspace_type\": \"desk\",\n  \"capacity\": 2,\n  \"city\": \"Lagos\",\n  \"address\": \"12 Adeola Odeku St\",\n  \"latitude\": 6.4281,\n  \"longitude\": 3.4219\n}"} } },
+        { "name": "List Workspaces (filters)", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces?city=Lagos&minCapacity=1&minPrice=500&maxPrice=5000&amenities=wifi,parking&minReliabilityScore=50" } },
+        { "name": "Search Workspaces", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/search?latitude=6.5244&longitude=3.3792&radius=10" } },
+        { "name": "Find Me Power Now", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/find-me-power-now?lat=6.5244&lng=3.3792" } },
+        { "name": "Get Workspace by ID", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/{{workspaceId}}" } },
+        { "name": "Update Workspace (Host)", "request": { "method": "PUT", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}", "body": {"mode":"raw","raw":"{\n  \"title\": \"Updated title\"\n}"} } },
+        { "name": "Delete Workspace (Host)", "request": { "method": "DELETE", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}" } },
+        { "name": "Upload Workspace Photo (Host)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}/photos", "body": {"mode":"formdata","formdata":[{"key":"photo","type":"file","src":""}]} } },
+        { "name": "List Workspace Photos", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/{{workspaceId}}/photos" } },
+        { "name": "Delete Workspace Photo (Host)", "request": { "method": "DELETE", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}/photos/{{photoId}}" } },
+        { "name": "Update Workspace Status (Admin)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}/status", "body": {"mode":"raw","raw":"{\n  \"status\": \"published\"\n}"} } },
+        { "name": "Get Reliability Score", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/{{workspaceId}}/reliability-score" } }
+      ]
+    },
+    {
+      "name": "Availability",
+      "item": [
+        { "name": "Create Availability Slot (Host)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/workspaces/{{workspaceId}}/availability", "body": {"mode":"raw","raw":"{\n  \"date\": \"2026-08-20\",\n  \"start_time\": \"09:00\",\n  \"end_time\": \"17:00\"\n}"} } },
+        { "name": "Get Workspace Availability", "request": { "method": "GET", "url": "{{baseUrl}}/workspaces/{{workspaceId}}/availability?date=2026-08-20" } },
+        { "name": "Update Availability Slot (Host)", "description": "Path fixed — was colliding with DELETE /workspaces/:id before the routing fix.", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/workspaces/availability/{{availabilityId}}", "body": {"mode":"raw","raw":"{\n  \"is_blocked\": true\n}"} } },
+        { "name": "Delete Availability Slot (Host)", "description": "Path fixed — was colliding with DELETE /workspaces/:id before the routing fix.", "request": { "method": "DELETE", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/workspaces/availability/{{availabilityId}}" } }
+      ]
+    },
+    {
+      "name": "Favorites",
+      "item": [
+        { "name": "Add Favorite", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/favorites/{{workspaceId}}" } },
+        { "name": "Remove Favorite", "request": { "method": "DELETE", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/favorites/{{workspaceId}}" } },
+        { "name": "List Favorites", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/favorites" } }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        { "name": "Create Booking (Seeker)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/bookings", "body": {"mode":"raw","raw":"{\n  \"workspace_id\": \"{{workspaceId}}\",\n  \"start_time\": \"2026-08-20T09:00:00Z\",\n  \"end_time\": \"2026-08-20T12:00:00Z\"\n}"} } },
+        { "name": "List My Bookings", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/bookings" } },
+        { "name": "Get Booking by ID", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/bookings/{{bookingId}}" } },
+        { "name": "Accept Booking (Host)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/accept" } },
+        { "name": "Decline Booking (Host)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/decline" } },
+        { "name": "Cancel Booking", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/cancel" } },
+        { "name": "Extend Booking", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/extend", "body": {"mode":"raw","raw":"{\n  \"new_end_time\": \"2026-08-20T14:00:00Z\"\n}"} } },
+        { "name": "Check In", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/checkin", "body": {"mode":"raw","raw":"{\n  \"code\": \"123456\"\n}"} } },
+        { "name": "Complete Booking (Host)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/complete" } },
+        { "name": "Submit Review", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/bookings/{{bookingId}}/review", "body": {"mode":"raw","raw":"{\n  \"rating\": 5,\n  \"comment\": \"Great space\",\n  \"power_stable\": true,\n  \"internet_as_described\": true\n}"} } }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        { "name": "Initiate Payment", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/payments/initiate", "body": {"mode":"raw","raw":"{\n  \"booking_id\": \"{{bookingId}}\"\n}"} } },
+        { "name": "Payment Callback", "request": { "method": "GET", "url": "{{baseUrl}}/payments/callback?reference=test-ref" } },
+        { "name": "Payment Webhook", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/payments/webhook", "body": {"mode":"raw","raw":"{\n  \"event\": \"charge.success\",\n  \"data\": {}\n}"} } },
+        { "name": "Get Payment Status by Booking", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/payments/status/{{bookingId}}" } },
+        { "name": "Get Transaction History", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/payments/transactions" } },
+        { "name": "Process Refund (Admin)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/payments/refund", "body": {"mode":"raw","raw":"{\n  \"booking_id\": \"{{bookingId}}\",\n  \"reason\": \"host cancelled\"\n}"} } }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        { "name": "Get Balance (Host)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/wallet/balance" } },
+        { "name": "Get Wallet Transactions (Host)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/wallet/transactions" } },
+        { "name": "Request Withdrawal (Host)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/wallet/withdraw", "body": {"mode":"raw","raw":"{\n  \"amount\": 5000\n}"} } },
+        { "name": "Get Withdrawal History (Host)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/wallet/withdrawals" } },
+        { "name": "Get Earnings (Host)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{hostToken}}"}], "url": "{{baseUrl}}/wallet/earnings" } },
+        { "name": "Get Pending Payouts (Admin)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/wallet/payouts/pending" } },
+        { "name": "Get Payout Schedule (Admin)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/wallet/payouts/schedule" } },
+        { "name": "Process Payouts (Admin)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/wallet/payouts/process" } },
+        { "name": "Get Wallet Stats (Admin)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/wallet/stats" } }
+      ]
+    },
+    {
+      "name": "Corporate",
+      "item": [
+        { "name": "Create Corporate Account", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/corporate/accounts", "body": {"mode":"raw","raw":"{\n  \"company_name\": \"Acme Corp\",\n  \"budget_amount\": 100000,\n  \"budget_period\": \"monthly\"\n}"} } },
+        { "name": "Update Budget (Corporate Admin)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/corporate/budget", "body": {"mode":"raw","raw":"{\n  \"budget_amount\": 150000\n}"} } },
+        { "name": "Invite Employee (Corporate Admin)", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/corporate/employees", "body": {"mode":"raw","raw":"{\n  \"email\": \"employee@example.com\"\n}"} } },
+        { "name": "Accept Invite (Public)", "request": { "method": "GET", "url": "{{baseUrl}}/corporate/accept-invite?token=invite-token-here" } },
+        { "name": "Get Usage Report (Corporate Admin)", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/corporate/reports?startDate=2026-08-01&endDate=2026-08-31" } }
+      ]
+    },
+    {
+      "name": "Support",
+      "item": [
+        { "name": "Update Ticket Status (Admin)", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/support/tickets/{{ticketId}}", "body": {"mode":"raw","raw":"{\n  \"status\": \"resolved\"\n}"} } }
+      ]
+    },
+    {
+      "name": "Search History",
+      "item": [
+        { "name": "Save Search", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/search/history", "body": {"mode":"raw","raw":"{\n  \"query\": \"desk lagos\",\n  \"filters\": {}\n}"} } },
+        { "name": "Get Search History", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/search/history" } },
+        { "name": "Clear Search History", "request": { "method": "DELETE", "header": [{"key":"Authorization","value":"Bearer {{seekerToken}}"}], "url": "{{baseUrl}}/search/history" } }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        { "name": "Get Pending Hosts", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/hosts/pending" } },
+        { "name": "Verify Host", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/hosts/{{hostUserId}}/verify" } },
+        { "name": "Get Pending Workspaces", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/workspaces/pending" } },
+        { "name": "Update Workspace Status", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/admin/workspaces/{{workspaceId}}/status", "body": {"mode":"raw","raw":"{\n  \"status\": \"published\"\n}"} } },
+        { "name": "Get All Bookings", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/bookings" } },
+        { "name": "Process Refund", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/admin/refunds", "body": {"mode":"raw","raw":"{\n  \"booking_id\": \"{{bookingId}}\"\n}"} } },
+        { "name": "Get Disputes", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/disputes" } },
+        { "name": "Resolve Dispute", "request": { "method": "PATCH", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/admin/disputes/{{disputeId}}/resolve", "body": {"mode":"raw","raw":"{\n  \"resolution\": \"refunded\"\n}"} } },
+        { "name": "Get Analytics", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{adminToken}}"}], "url": "{{baseUrl}}/admin/analytics" } }
+      ]
+    }
+  ]
+}

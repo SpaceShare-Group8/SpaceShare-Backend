@@ -7,6 +7,7 @@ import {
   generatePasswordResetToken,
   verifyPasswordResetToken,
 } from "../common/utils/jwt.js";
+import { sendEmail } from "../common/utils/mailer.js";
 
 /**
  * Register a new user.
@@ -211,9 +212,15 @@ export const forgotPassword = async (email) => {
   }
 
   const resetToken = generatePasswordResetToken(user);
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-  // Temporary until email service is integrated
-  console.log("Password Reset Token:", resetToken);
+  // Send reset email via Brevo
+  await sendEmail({
+    to: user.email,
+    subject: "SpaceShare - Password Reset Request",
+    text: `You requested a password reset. Please use the following link to reset your password: ${resetUrl}`,
+    html: `<p>You requested a password reset.</p><p>Click <a href="${resetUrl}">here</a> to reset your password.</p>`,
+  });
 
   return {
     message:
