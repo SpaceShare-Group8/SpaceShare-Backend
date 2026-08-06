@@ -62,7 +62,7 @@ export const register = async (userData) => {
     role,
   });
 
-  // Automatically create host profile
+  // Automatically create host profile if registering as host
   if (user.role === "host") {
     const hostProfile =
       await authRepository.findHostProfileByUserId(user.id);
@@ -70,6 +70,27 @@ export const register = async (userData) => {
     if (!hostProfile) {
       await authRepository.createHostProfile(user.id);
     }
+  }
+
+  // Dispatch Welcome Email asynchronously if user registered with an email
+  if (user.email) {
+    sendEmail({
+      to: user.email,
+      subject: "Welcome to SpaceShare!",
+      text: `Hello ${user.full_name || 'User'},\n\nWelcome to SpaceShare! We're excited to have you on board.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Welcome to SpaceShare, ${user.full_name || 'User'}!</h2>
+          <p>Thank you for creating an account with us. We are thrilled to have you join our community.</p>
+          <p>If you have any questions or need support, feel free to reach out to our team.</p>
+          <br />
+          <p>Best regards,<br />The SpaceShare Team</p>
+        </div>
+      `,
+    }).catch((err) => {
+      // Catch and log mailer errors so registration flow isn't interrupted
+      console.error("[Email Error] Failed to send welcome email:", err);
+    });
   }
 
   const payload = {
@@ -203,7 +224,7 @@ export const forgotPassword = async (email) => {
   const user =
     await authRepository.findUserForPasswordReset(email);
 
-  // Prevent email enumeration
+  // Prevent email enumeration attack
   if (!user) {
     return {
       message:
@@ -212,14 +233,24 @@ export const forgotPassword = async (email) => {
   }
 
   const resetToken = generatePasswordResetToken(user);
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
 
-  // Send reset email via Brevo
+  // Send reset email via mailer module
   await sendEmail({
     to: user.email,
     subject: "SpaceShare - Password Reset Request",
     text: `You requested a password reset. Please use the following link to reset your password: ${resetUrl}`,
-    html: `<p>You requested a password reset.</p><p>Click <a href="${resetUrl}">here</a> to reset your password.</p>`,
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Password Reset Request</h2>
+        <p>You requested a password reset for your SpaceShare account.</p>
+        <p>Click the button below to set a new password:</p>
+        <p style="margin: 20px 0;">
+          <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
+        </p>
+        <p>If you did not request this, please ignore this email.</p>
+      </div>
+    `,
   });
 
   return {
