@@ -1,6 +1,13 @@
-import { body, validationResult} from "express-validator";
+import { body, validationResult } from "express-validator";
 
-//Handles validation errors
+// ================================================================
+// VALIDATION ERROR HANDLER
+// ================================================================
+
+/**
+ * Handle validation errors
+ * Returns formatted error response
+ */
 export const validate = (req, res, next) => {
   const errors = validationResult(req);
 
@@ -8,13 +15,20 @@ export const validate = (req, res, next) => {
     return res.status(400).json({
       success: false,
       message: "Validation failed.",
-      errors: errors.array(),
+      errors: errors.array().map((err) => ({
+        field: err.path,
+        message: err.msg,
+        value: err.value,
+      })),
     });
   }
 
   next();
 };
 
+// ================================================================
+// AUTHENTICATION VALIDATIONS
+// ================================================================
 
 /**
  * Validation rules for user registration
@@ -27,20 +41,26 @@ export const registerValidation = [
     .notEmpty()
     .withMessage("Full name is required.")
     .isLength({ min: 2, max: 100 })
-    .withMessage("Full name must be between 2 and 100 characters."),
+    .withMessage("Full name must be between 2 and 100 characters.")
+    .matches(/^[a-zA-Z\s.'-]+$/)
+    .withMessage("Full name contains invalid characters. Use letters, spaces, dots, apostrophes, or hyphens only."),
 
   body("email")
     .optional({ checkFalsy: true })
     .trim()
     .isEmail()
     .withMessage("Please provide a valid email address.")
-    .normalizeEmail(),
+    .normalizeEmail()
+    .isLength({ max: 255 })
+    .withMessage("Email must not exceed 255 characters."),
 
   body("phone")
     .optional({ checkFalsy: true })
     .trim()
     .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage("Please provide a valid phone number in E.164 format."),
+    .withMessage("Please provide a valid phone number in E.164 format (e.g., +2348012345678).")
+    .isLength({ min: 7, max: 15 })
+    .withMessage("Phone number must be between 7 and 15 characters."),
 
   body("password")
     .notEmpty()
@@ -50,26 +70,14 @@ export const registerValidation = [
     .matches(/\d/)
     .withMessage("Password must contain at least one number.")
     .matches(/[a-zA-Z]/)
-    .withMessage("Password must contain at least one letter."),
+    .withMessage("Password must contain at least one letter.")
+    .matches(/[A-Z]/)
+    .withMessage("Password must contain at least one uppercase letter."),
 
   body("role")
     .optional()
     .isIn(["seeker", "host", "corporate_admin", "admin"])
-    .withMessage("Invalid role specified. Must be 'seeker', 'host','corporate_admin', or 'admin'."),
-
-  // body("roles")
-  //   .optional()
-  //   .isArray({ min:1 })
-  //   .withMessage("Roles must be an array of valid role strings.")
-  //   .custom((roles) => {
-  //     const validRoles = ["seeker", "host", "corporate_admin", "admin"];
-  //     const isValid = roles.every((r) => validRoles.includes(r));
-  //     if (!isValid) {
-  //       throw new Error("Roles contains invalid entries. Allowed: seeker, host, corporate_admin, admin.");
-  //     }
-  //     return true;
-  //   }),
-
+    .withMessage("Invalid role specified. Must be 'seeker', 'host', 'corporate_admin', or 'admin'."),
 
   // Custom validator to ensure either email OR phone is provided
   body().custom((value, { req }) => {
@@ -78,6 +86,7 @@ export const registerValidation = [
     }
     return true;
   }),
+
   validate,
 ];
 
@@ -98,11 +107,13 @@ export const loginValidation = [
     .optional({ checkFalsy: true })
     .trim()
     .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage("Please provide a valid phone number."),
+    .withMessage("Please provide a valid phone number in E.164 format."),
 
   body("password")
     .notEmpty()
-    .withMessage("Password is required."),
+    .withMessage("Password is required.")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters long."),
 
   // Custom validator to ensure either email OR phone is supplied
   body().custom((value, { req }) => {
@@ -111,8 +122,62 @@ export const loginValidation = [
     }
     return true;
   }),
+
   validate,
 ];
+
+// ================================================================
+// OTP VALIDATIONS (NEW)
+// ================================================================
+
+/**
+ * Validation rules for OTP verification
+ * POST /api/auth/verify-otp
+ */
+export const verifyOTPValidation = [
+  body("email")
+    .notEmpty()
+    .withMessage("Email is required.")
+    .isEmail()
+    .withMessage("Please provide a valid email address.")
+    .normalizeEmail()
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage("Email must not exceed 255 characters."),
+
+  body("otp")
+    .notEmpty()
+    .withMessage("OTP code is required.")
+    .isString()
+    .withMessage("OTP must be a string.")
+    .matches(/^\d{6}$/)
+    .withMessage("OTP must be exactly 6 digits (e.g., 123456).")
+    .trim(),
+
+  validate,
+];
+
+/**
+ * Validation rules for resending OTP
+ * POST /api/auth/resend-otp
+ */
+export const resendOTPValidation = [
+  body("email")
+    .notEmpty()
+    .withMessage("Email is required.")
+    .isEmail()
+    .withMessage("Please provide a valid email address.")
+    .normalizeEmail()
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage("Email must not exceed 255 characters."),
+
+  validate,
+];
+
+// ================================================================
+// TOKEN VALIDATIONS
+// ================================================================
 
 /**
  * Validation rules for token refresh
@@ -121,9 +186,17 @@ export const loginValidation = [
 export const refreshValidation = [
   body("refreshToken")
     .notEmpty()
-    .withMessage("Refresh token is required."),
-    validate,
+    .withMessage("Refresh token is required.")
+    .isString()
+    .withMessage("Refresh token must be a string.")
+    .trim(),
+
+  validate,
 ];
+
+// ================================================================
+// PASSWORD RESET VALIDATIONS
+// ================================================================
 
 /**
  * Validation rules for Forgot Password
@@ -136,9 +209,11 @@ export const forgotPasswordValidation = [
     .withMessage("Email is required.")
     .isEmail()
     .withMessage("Please provide a valid email address.")
-    .normalizeEmail(),
+    .normalizeEmail()
+    .isLength({ max: 255 })
+    .withMessage("Email must not exceed 255 characters."),
 
-    validate,
+  validate,
 ];
 
 /**
@@ -148,7 +223,10 @@ export const forgotPasswordValidation = [
 export const resetPasswordValidation = [
   body("token")
     .notEmpty()
-    .withMessage("Reset token is required."),
+    .withMessage("Reset token is required.")
+    .isString()
+    .withMessage("Reset token must be a string.")
+    .trim(),
 
   body("password")
     .notEmpty()
@@ -158,8 +236,24 @@ export const resetPasswordValidation = [
     .matches(/\d/)
     .withMessage("Password must contain at least one number.")
     .matches(/[a-zA-Z]/)
-    .withMessage("Password must contain at least one letter."),
+    .withMessage("Password must contain at least one letter.")
+    .matches(/[A-Z]/)
+    .withMessage("Password must contain at least one uppercase letter."),
 
-    validate,
+  validate,
 ];
 
+// ================================================================
+// EXPORTS
+// ================================================================
+
+export default {
+  validate,
+  registerValidation,
+  loginValidation,
+  verifyOTPValidation,
+  resendOTPValidation,
+  refreshValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation,
+};

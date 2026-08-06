@@ -10,7 +10,14 @@ import {
 import { sendEmail } from "../common/utils/mailer.js";
 
 /**
- * Register a new user.
+ * Generate a 6-digit OTP code
+ */
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
+ * Register a new user with OTP verification
  */
 export const register = async (userData) => {
   const {
@@ -38,7 +45,6 @@ export const register = async (userData) => {
 
   if (email) {
     const existingEmail = await authRepository.findUserByEmail(email);
-
     if (existingEmail) {
       throw new Error("Email already registered.");
     }
@@ -46,7 +52,6 @@ export const register = async (userData) => {
 
   if (phone) {
     const existingPhone = await authRepository.findUserByPhone(phone);
-
     if (existingPhone) {
       throw new Error("Phone number already registered.");
     }
@@ -64,33 +69,61 @@ export const register = async (userData) => {
 
   // Automatically create host profile if registering as host
   if (user.role === "host") {
-    const hostProfile =
-      await authRepository.findHostProfileByUserId(user.id);
-
+    const hostProfile = await authRepository.findHostProfileByUserId(user.id);
     if (!hostProfile) {
       await authRepository.createHostProfile(user.id);
     }
   }
 
-  // Dispatch Welcome Email asynchronously if user registered with an email
+  // Generate and store OTP for email verification
   if (user.email) {
-    sendEmail({
-      to: user.email,
-      subject: "Welcome to SpaceShare!",
-      text: `Hello ${user.full_name || 'User'},\n\nWelcome to SpaceShare! We're excited to have you on board.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Welcome to SpaceShare, ${user.full_name || 'User'}!</h2>
-          <p>Thank you for creating an account with us. We are thrilled to have you join our community.</p>
-          <p>If you have any questions or need support, feel free to reach out to our team.</p>
-          <br />
-          <p>Best regards,<br />The SpaceShare Team</p>
-        </div>
-      `,
-    }).catch((err) => {
-      // Catch and log mailer errors so registration flow isn't interrupted
-      console.error("[Email Error] Failed to send welcome email:", err);
-    });
+    const otp = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    try {
+      // Store OTP in database
+      await authRepository.updateUserOTP(user.id, otp, otpExpiry);
+
+      // Send OTP email
+      await sendEmail({
+        to: user.email,
+        subject: "🔐 SpaceShare - Your Verification Code",
+        text: `Your SpaceShare verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, please ignore this email.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #2862BC; margin: 0;">SpaceShare</h1>
+              <p style="color: #64748B; margin: 5px 0 0;">Verify Your Account</p>
+            </div>
+            
+            <div style="background: #F8FAFC; border-radius: 12px; padding: 30px; text-align: center;">
+              <h2 style="color: #0F172A; margin-bottom: 10px; font-size: 20px;">🔐 Verification Code</h2>
+              <p style="color: #64748B; margin-bottom: 20px; font-size: 15px;">Use the code below to verify your account:</p>
+              
+              <div style="background: white; border: 2px dashed #2862BC; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                <span style="font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #2862BC;">${otp}</span>
+              </div>
+              
+              <p style="color: #64748B; font-size: 14px; margin: 10px 0;">
+                This code expires in <strong>10 minutes</strong>.
+              </p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E2E8F0;">
+              <p style="color: #94A3B8; font-size: 12px; margin: 0;">
+                If you didn't create an account with SpaceShare, please ignore this email.
+              </p>
+              <p style="color: #94A3B8; font-size: 12px; margin: 5px 0 0;">
+                © ${new Date().getFullYear()} SpaceShare. All rights reserved.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      console.error("[OTP Error] Failed to store or send OTP:", error);
+      // Don't throw - user is created, just log the error
+    }
   }
 
   const payload = {
@@ -100,7 +133,7 @@ export const register = async (userData) => {
   };
 
   return {
-    message: "User registered successfully.",
+    message: "User registered successfully. Please verify your email with the OTP sent.",
     accessToken: generateAccessToken(payload),
     refreshToken: generateRefreshToken(payload),
     user: {
@@ -111,6 +144,131 @@ export const register = async (userData) => {
       role: user.role,
       is_verified: user.is_verified,
     },
+  };
+};
+
+/**
+ * Verify OTP and activate user account
+ */
+export const verifyOTP = async (email, otp) => {
+  if (!email || !otp) {
+    throw new Error("Email and OTP are required.");
+  }
+
+  const user = await authRepository.findUserWithOTP(email);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  if (user.is_verified) {
+    throw new Error("User is already verified.");
+  }
+
+  if (!user.otp) {
+    throw new Error("No OTP found. Please request a new one.");
+  }
+
+  // Check if OTP has expired
+  const now = new Date();
+  const expiry = new Date(user.otp_expiry);
+  if (now > expiry) {
+    throw new Error("OTP has expired. Please request a new one.");
+  }
+
+  // Verify OTP
+  if (user.otp !== otp) {
+    throw new Error("Invalid OTP code. Please try again.");
+  }
+
+  // Mark user as verified
+  const verifiedUser = await authRepository.verifyUserWithOTP(user.id);
+
+  return {
+    message: "OTP verified successfully.",
+    user: {
+      id: verifiedUser.id,
+      email: verifiedUser.email,
+      is_verified: verifiedUser.is_verified,
+    },
+  };
+};
+
+/**
+ * Resend OTP to user
+ */
+export const resendOTP = async (email) => {
+  if (!email) {
+    throw new Error("Email is required.");
+  }
+
+  console.log("[Resend OTP] Looking for user with email:", email);
+
+  const user = await authRepository.findUserWithOTP(email);
+
+  if (!user) {
+    console.log("[Resend OTP] User not found:", email);
+    throw new Error("User not found.");
+  }
+
+  console.log("[Resend OTP] User found:", user.id, "Verified:", user.is_verified);
+
+  if (user.is_verified) {
+    throw new Error("User is already verified.");
+  }
+
+  // Generate new OTP
+  const otp = generateOTP();
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  console.log("[Resend OTP] New OTP generated:", otp, "Expires:", otpExpiry);
+
+  try {
+    // Save new OTP
+    await authRepository.updateUserOTP(user.id, otp, otpExpiry);
+    console.log("[Resend OTP] OTP saved to database");
+
+    // Send OTP via email
+    await sendEmail({
+      to: user.email,
+      subject: "🔐 SpaceShare - New Verification Code",
+      text: `Your new SpaceShare verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, please ignore this email.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #2862BC; margin: 0;">SpaceShare</h1>
+            <p style="color: #64748B; margin: 5px 0 0;">New Verification Code</p>
+          </div>
+          
+          <div style="background: #F8FAFC; border-radius: 12px; padding: 30px; text-align: center;">
+            <h2 style="color: #0F172A; margin-bottom: 10px; font-size: 20px;">🔐 New Verification Code</h2>
+            <p style="color: #64748B; margin-bottom: 20px; font-size: 15px;">Your new verification code is:</p>
+            
+            <div style="background: white; border: 2px dashed #2862BC; border-radius: 12px; padding: 20px; margin: 20px 0;">
+              <span style="font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #2862BC;">${otp}</span>
+            </div>
+            
+            <p style="color: #64748B; font-size: 14px; margin: 10px 0;">
+              This code expires in <strong>10 minutes</strong>.
+            </p>
+          </div>
+          
+          <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E2E8F0;">
+            <p style="color: #94A3B8; font-size: 12px; margin: 0;">
+              If you didn't request this, please ignore this email.
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    console.log("[Resend OTP] Email sent successfully to:", user.email);
+  } catch (error) {
+    console.error("[Resend OTP] Error:", error);
+    throw new Error("Failed to resend OTP. Please try again.");
+  }
+
+  return {
+    message: "New OTP sent successfully.",
   };
 };
 
@@ -148,11 +306,14 @@ export const login = async ({
     throw new Error("Invalid email or password.");
   }
 
+  // Check if user is verified
+  if (!user.is_verified) {
+    throw new Error("Please verify your email first. Check your inbox for the OTP.");
+  }
+
   // Automatically create host profile
   if (user.role === "host") {
-    const hostProfile =
-      await authRepository.findHostProfileByUserId(user.id);
-
+    const hostProfile = await authRepository.findHostProfileByUserId(user.id);
     if (!hostProfile) {
       await authRepository.createHostProfile(user.id);
     }
@@ -221,14 +382,12 @@ export const forgotPassword = async (email) => {
     throw new Error("Email is required.");
   }
 
-  const user =
-    await authRepository.findUserForPasswordReset(email);
+  const user = await authRepository.findUserForPasswordReset(email);
 
   // Prevent email enumeration attack
   if (!user) {
     return {
-      message:
-        "If an account exists with this email, password reset instructions have been sent.",
+      message: "If an account exists with this email, password reset instructions have been sent.",
     };
   }
 
@@ -241,35 +400,46 @@ export const forgotPassword = async (email) => {
     subject: "SpaceShare - Password Reset Request",
     text: `You requested a password reset. Please use the following link to reset your password: ${resetUrl}`,
     html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2>Password Reset Request</h2>
-        <p>You requested a password reset for your SpaceShare account.</p>
-        <p>Click the button below to set a new password:</p>
-        <p style="margin: 20px 0;">
-          <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
-        </p>
-        <p>If you did not request this, please ignore this email.</p>
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #2862BC; margin: 0;">SpaceShare</h1>
+          <p style="color: #64748B; margin: 5px 0 0;">Password Reset</p>
+        </div>
+        
+        <div style="background: #F8FAFC; border-radius: 12px; padding: 30px; text-align: center;">
+          <h2 style="color: #0F172A; margin-bottom: 10px; font-size: 20px;">Reset Your Password</h2>
+          <p style="color: #64748B; margin-bottom: 20px; font-size: 15px;">
+            You requested a password reset for your SpaceShare account.
+          </p>
+          
+          <a href="${resetUrl}" style="display: inline-block; background-color: #2862BC; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 10px 0;">
+            Reset Password
+          </a>
+          
+          <p style="color: #64748B; font-size: 14px; margin: 15px 0 0;">
+            This link expires in <strong>15 minutes</strong>.
+          </p>
+        </div>
+        
+        <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E2E8F0;">
+          <p style="color: #94A3B8; font-size: 12px; margin: 0;">
+            If you didn't request this, please ignore this email.
+          </p>
+        </div>
       </div>
     `,
   });
 
   return {
-    message:
-      "If an account exists with this email, password reset instructions have been sent.",
-    resetToken:
-      process.env.NODE_ENV === "development"
-        ? resetToken
-        : undefined,
+    message: "If an account exists with this email, password reset instructions have been sent.",
+    resetToken: process.env.NODE_ENV === "development" ? resetToken : undefined,
   };
 };
 
 /**
  * Reset Password.
  */
-export const resetPassword = async (
-  token,
-  newPassword
-) => {
+export const resetPassword = async (token, newPassword) => {
   if (!token) {
     throw new Error("Reset token is required.");
   }
@@ -294,10 +464,7 @@ export const resetPassword = async (
 
   const password_hash = await hashPassword(newPassword);
 
-  await authRepository.updatePassword(
-    user.id,
-    password_hash
-  );
+  await authRepository.updatePassword(user.id, password_hash);
 
   return {
     message: "Password reset successfully.",

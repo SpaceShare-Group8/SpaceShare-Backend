@@ -1,55 +1,68 @@
-// src/common/utils/mailer.js
-import nodemailer from 'nodemailer';
+// src/common/utils/brevo-mailer.js
+import axios from 'axios';
 
-// Initialize Nodemailer transporter using environment variables
-const transporter = nodemailer.createTransport({
-  host: process.env.BREVO_HOST,
-  port: Number(process.env.BREVO_PORT || 587),
-  secure: false, // True for 465, false for 587/STARTTLS
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASS,
-  },
-  // Add connection timeout and logger for more visibility
-  connectionTimeout: 5000, // 5 seconds
-});
-
-// Remove the transporter.verify() call here.
-// Instead, rely on sendEmail to handle errors.
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 /**
- * Sends an email via Brevo SMTP
- * @param {Object} options
- * @param {string} options.to - Recipient email address
- * @param {string} options.subject - Email subject line
+ * Send email using Brevo HTTP API
+ * @param {Object} options - Email options
+ * @param {string} options.to - Recipient email
+ * @param {string} options.subject - Email subject
  * @param {string} options.text - Plain text body
- * @param {string} [options.html] - Optional HTML body
- * @returns {Promise<import('nodemailer').SentMessageInfo>}
+ * @param {string} [options.html] - HTML body (optional)
+ * @returns {Promise<Object>} - API response
  */
 export const sendEmail = async ({ to, subject, text, html }) => {
   try {
-    const sender = process.env.EMAIL_FROM || process.env.BREVO_USER;
+    const sender = process.env.EMAIL_FROM || process.env.BREVO_USER || 'spaceshare01@gmail.com';
 
-    const mailOptions = {
-      from: `"SpaceShare" <${sender}>`,
-      to,
-      subject,
-      text,
-      html: html || text, // Fallback HTML to text if not provided
+    console.log(`[Brevo API] Sending email to: ${to}`);
+    console.log(`[Brevo API] Using API key: ${BREVO_API_KEY ? '✅ Present' : '❌ Missing'}`);
+
+    if (!BREVO_API_KEY) {
+      throw new Error('BREVO_API_KEY environment variable is not set');
+    }
+
+    const payload = {
+      sender: {
+        name: 'SpaceShare',
+        email: sender,
+      },
+      to: [
+        {
+          email: to,
+        },
+      ],
+      subject: subject,
+      htmlContent: html || text.replace(/\n/g, '<br />'),
+      textContent: text,
     };
 
-    // Add logging before sending
-    console.log(`[Email] Attempting to send to ${to} via ${process.env.BREVO_HOST}:${process.env.BREVO_PORT}`);
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[Email Sent] Message ID: ${info.messageId} -> To: ${to}`);
-    return info;
+    const response = await axios.post(BREVO_API_URL, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': BREVO_API_KEY,
+      },
+      timeout: 10000, // 10 second timeout
+    });
+
+    console.log(`[Brevo API] ✅ Email sent successfully to ${to}`);
+    console.log(`[Brevo API] Message ID: ${response.data.messageId}`);
+
+    return {
+      success: true,
+      messageId: response.data.messageId,
+    };
   } catch (error) {
-    console.error(`[Email Error] Failed to send email to ${to}:`, error);
-    // Log the specific error to understand why it's failing
-    if (error.code === 'ETIMEDOUT') {
-      console.error('🚨 Connection timeout: Check if your server can reach smtp-relay.brevo.com on port 587.');
+    console.error(`[Brevo API] ❌ Failed to send email to ${to}:`, error.message);
+    
+    if (error.response) {
+      console.error('[Brevo API] Response status:', error.response.status);
+      console.error('[Brevo API] Response data:', JSON.stringify(error.response.data, null, 2));
     }
-    throw error; // Re-throw to be handled by the caller
+    
+    throw error;
   }
 };
 

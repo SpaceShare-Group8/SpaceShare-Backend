@@ -6,6 +6,9 @@ import {
   refresh,
   forgotPassword,
   resetPassword,
+  verifyOTP,
+  resendOTP,
+  getMe,
 } from "./auth.controller.js";
 
 import {
@@ -14,6 +17,8 @@ import {
   refreshValidation,
   forgotPasswordValidation,
   resetPasswordValidation,
+  verifyOTPValidation,
+  resendOTPValidation,
   validate,
 } from "./auth.validation.js";
 
@@ -43,6 +48,30 @@ router.post(
   loginValidation,
   validate,
   login
+);
+
+/**
+ * @route   POST /api/auth/verify-otp
+ * @desc    Verify OTP code sent to email
+ * @access  Public
+ */
+router.post(
+  "/verify-otp",
+  verifyOTPValidation,
+  validate,
+  verifyOTP
+);
+
+/**
+ * @route   POST /api/auth/resend-otp
+ * @desc    Resend OTP code to email
+ * @access  Public
+ */
+router.post(
+  "/resend-otp",
+  resendOTPValidation,
+  validate,
+  resendOTP
 );
 
 /**
@@ -86,11 +115,6 @@ router.post(
  * @desc    Get currently authenticated user
  * @access  Private
  */
-router.get("/me", protect, (req, res) => {
-  return res.status(200).json({
-    success: true,
-    data: req.user,
-  });
-});
+router.get("/me", protect, getMe);
 
 export default router;
